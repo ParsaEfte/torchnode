@@ -1,0 +1,38 @@
+# Maven / Java
+target/
+*.class
+*.jar
+*.war
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# macOS
+.DS_Store
+
+# Database / runtime data
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Go build artifacts
+p2p-helper/bin/
+p2p-helper/*.exe
