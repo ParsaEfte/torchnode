@@ -36,3 +36,4 @@ logs/
 # Go build artifacts
 p2p-helper/bin/
 p2p-helper/*.exe
+/p2p-helper/p2p-helper
