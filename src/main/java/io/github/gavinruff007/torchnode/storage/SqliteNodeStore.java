@@ -286,7 +286,9 @@ public class SqliteNodeStore implements NodeStore {
                 node_id = excluded.node_id,
                 discovery_source = excluded.discovery_source,
                 last_seen = excluded.last_seen
-            WHERE excluded.last_seen >= nodes.last_seen
+            WHERE (excluded.last_seen >= nodes.last_seen
+                AND (nodes.discovery_source != 'discv4' OR excluded.discovery_source != 'discv5'))
+                OR (nodes.discovery_source = 'discv5' AND excluded.discovery_source = 'discv4')
         """;
         
         Savepoint savepoint = null;
@@ -317,6 +319,11 @@ public class SqliteNodeStore implements NodeStore {
                 pstmt.setString(17, node.getDiscoverySource());
 
                 pstmt.executeUpdate();
+            }
+            // A discv5 receipt updates liveness time without replacing a selected discv4 endpoint.
+            if (node.getDiscoverySource().equals("discv5")) try (PreparedStatement seen = connection.prepareStatement(
+                    "UPDATE nodes SET last_seen = MAX(last_seen, ?) WHERE key = ?")) {
+                seen.setLong(1, node.getLastSeen().getEpochSecond()); seen.setString(2, node.getKey()); seen.executeUpdate();
             }
             connection.releaseSavepoint(savepoint);
             if (ownTransaction) connection.commit();

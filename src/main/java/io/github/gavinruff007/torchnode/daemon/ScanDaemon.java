@@ -20,6 +20,7 @@ public class ScanDaemon {
 
     private volatile boolean running = false;
     private Thread scanThread;
+    private Thread inspectionThread;
     private final Set<String> inspectedNodes = ConcurrentHashMap.newKeySet();
     private DiscoveryProvider provider;
     private EnrAcquirer enrAcquirer;
@@ -48,16 +49,25 @@ public class ScanDaemon {
                 while (running) {
                     provider.discover(observation -> {
                         nodeStore.saveObservation(observation);
-                        enrAcquirer.acquire(new NodeRecord(observation), evidence -> {
+                        if (observation.source().equals("discv4")) enrAcquirer.acquire(new NodeRecord(observation), evidence -> {
                             if (evidence.outcome().equals("BUSY")) return;
                             try (SqliteNodeStore enrStore = new SqliteNodeStore(databasePath)) { enrStore.saveEnrEvidence(evidence); }
                             catch (Exception e) { System.err.println("[ENR] Evidence persistence failed: " + e.getMessage()); }
                         });
                     });
+                    provider.drainEnrEvidence(evidence -> {
+                        try { ((SqliteNodeStore)nodeStore).saveEnrEvidence(evidence); }
+                        catch (SQLException e) { throw new IllegalStateException("Cannot persist provider ENR", e); }
+                    });
                     if (!running) break;
-                    inspectNewNodes(nodeStore);
-                    if (!running) break;
-                    Thread.sleep(60000);
+                    if (inspectionThread == null || !inspectionThread.isAlive()) {
+                        inspectionThread = new Thread(() -> {
+                            try (NodeStore inspectionStore = new SqliteNodeStore(databasePath)) { inspectNewNodes(inspectionStore); }
+                            catch (Exception e) { System.err.println("[Inspect] " + e.getMessage()); }
+                        }, "scanner-api-inspection");
+                        inspectionThread.setDaemon(true); inspectionThread.start();
+                    }
+                    Thread.sleep(1000);
                 }
 
             } catch (InterruptedException e) {
@@ -69,8 +79,19 @@ public class ScanDaemon {
                 running = false;
                 provider.close();
                 enrAcquirer.close();
+                boolean interrupted = false;
+                if (inspectionThread != null) {
+                    inspectionThread.interrupt();
+                    while (inspectionThread.isAlive()) try { inspectionThread.join(100); }
+                    catch (InterruptedException e) { interrupted = true; }
+                }
+                if (interrupted) Thread.currentThread().interrupt();
                 try {
                     provider.discover(nodeStore::saveObservation);
+                    provider.drainEnrEvidence(evidence -> {
+                        try { ((SqliteNodeStore)nodeStore).saveEnrEvidence(evidence); }
+                        catch (SQLException e) { throw new IllegalStateException(e); }
+                    });
                 } catch (Exception e) {
                     System.err.println("[ScanDaemon] Failed to persist final discovery evidence: " + e.getMessage());
                 } finally { nodeStore.close(); }

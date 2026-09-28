@@ -49,9 +49,21 @@ public class InspectionService implements AutoCloseable {
             String id = UUID.randomUUID().toString();
             InspectionResult result = new InspectionResult(id, node);
             results.put(id, result);
-            try (SqliteNodeStore store = new SqliteNodeStore(databasePath)) { result.loadEnrEvidence(store.findEnrEvidence(node.identity())); }
+            try (SqliteNodeStore store = new SqliteNodeStore(databasePath)) {
+                result.loadEnrEvidence(store.findEnrEvidence(node.identity()));
+                node.setObservations(store.findObservations(node.identity()));
+            }
             catch (Exception e) { result.event("Saved ENR evidence unavailable", concise(e)); }
-            CompletableFuture<Void> enr = enrAcquirer.acquire(node).thenAccept(result::setEnrEvidence);
+            CompletableFuture<Void> enr;
+            if (node.getDiscoverySource().equals("discv5")) {
+                // This provider already delivered ENR evidence; do not send discv4 packets to its UDP endpoint.
+                try (SqliteNodeStore store = new SqliteNodeStore(databasePath)) {
+                    var saved = io.github.gavinruff007.torchnode.enr.EnrEvidence.latestValidated(store.findEnrEvidence(node.identity()));
+                    result.setEnrEvidence(saved.orElseGet(() -> io.github.gavinruff007.torchnode.enr.EnrEvidence.unavailable(
+                        node.identity(), "DISCV5 provider evidence", "ENR_NOT_AVAILABLE", "Provider ENR not yet persisted")));
+                } catch (Exception e) { result.event("Provider ENR unavailable", concise(e)); }
+                enr = CompletableFuture.completedFuture(null);
+            } else enr = enrAcquirer.acquire(node).thenAccept(result::setEnrEvidence);
 
             CompletableFuture<Void> tcp = CompletableFuture.runAsync(() -> inspectP2p(result), executor);
             CompletableFuture<Void> rpc = CompletableFuture.runAsync(() -> inspectRpc(result), executor);

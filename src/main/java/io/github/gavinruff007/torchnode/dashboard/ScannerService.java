@@ -2,7 +2,8 @@ package io.github.gavinruff007.torchnode.dashboard;
 
 import io.github.gavinruff007.torchnode.daemon.ScanDaemon;
 import io.github.gavinruff007.torchnode.discovery.LocalNodeIdentity;
-import io.github.gavinruff007.torchnode.discovery.Discv4DiscoveryProvider;
+import io.github.gavinruff007.torchnode.discovery.*;
+import java.util.List;
 
 import java.net.DatagramSocket;
 
@@ -24,15 +25,21 @@ public class ScannerService {
         if (isRunning()) {
             return;
         }
-        socket = new DatagramSocket(30303);
-        daemon = new ScanDaemon(databasePath);
+        LocalNodeIdentity identity = new LocalNodeIdentity();
+        java.util.List<DiscoveryProvider> providers = new java.util.ArrayList<>();
         try {
-            daemon.start(new Discv4DiscoveryProvider(new LocalNodeIdentity(), socket, BOOTSTRAP_NODES));
-        } catch (Exception e) {
-            socket.close();
-            socket = null;
-            daemon = null;
-            throw e;
+            socket = new DatagramSocket(30303);
+            providers.add(new Discv4DiscoveryProvider(identity, socket, BOOTSTRAP_NODES));
+        } catch (java.net.SocketException e) {
+            System.err.println("[Discovery] discv4 unavailable: " + e.getMessage()); socket = null;
+        }
+        try { providers.add(new Discv5DiscoveryProvider(identity)); }
+        catch (java.io.IOException e) { System.err.println("[Discovery] discv5 configuration unavailable: " + e.getMessage()); }
+        if (providers.isEmpty()) throw new java.io.IOException("No discovery provider could be configured");
+        daemon = new ScanDaemon(databasePath);
+        try { daemon.start(new CompositeDiscoveryProvider(providers)); }
+        catch (Exception e) {
+            providers.forEach(DiscoveryProvider::close); socket = null; daemon = null; throw e;
         }
     }
 

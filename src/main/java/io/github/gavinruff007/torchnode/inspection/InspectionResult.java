@@ -116,6 +116,11 @@ public class InspectionResult {
         root.put("complete", complete);
         root.put("startedAt", startedAt.toString());
         root.put("node", nodeMap());
+        root.put("discv5", node.getObservations().stream().filter(o -> o.source().equals("discv5")).map(o -> {
+            Map<String,Object> value = new LinkedHashMap<>(); value.put("identity", o.identity().nodeId());
+            value.put("observedAt", o.observedAt().toString()); value.put("endpoints", o.endpoints());
+            value.put("provenance", o.provenance()); return value;
+        }).toList());
         root.put("client", clientMap());
         root.put("nodeStack", nodeStack());
         root.put("rpc", rpc);

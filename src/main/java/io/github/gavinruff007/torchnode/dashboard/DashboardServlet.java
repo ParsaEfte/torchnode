@@ -70,7 +70,8 @@ public class DashboardServlet extends HttpServlet {
         if (!"seen_desc".equals(sort) && !"seen_asc".equals(sort)) sort = "detail";
 
         try (NodeStore store = new SqliteNodeStore(databasePath)) {
-            List<NodeRecord> allNodes = store.findAll();
+            List<NodeRecord> endpointRows = store.findAll();
+            List<NodeRecord> allNodes = io.github.gavinruff007.torchnode.model.CanonicalNodes.views(endpointRows);
             Comparator<NodeRecord> ordering = ordering(sort);
             List<NodeRecord> filteredNodes = allNodes.stream()
                     .filter(node -> type == null || node.getNodeType().name().equalsIgnoreCase(type))
@@ -87,11 +88,10 @@ public class DashboardServlet extends HttpServlet {
             Instant activeCutoff = Instant.now().minus(15, ChronoUnit.MINUTES);
             request.setAttribute("nodes", nodes);
             request.setAttribute("totalNodes", allNodes.size());
-            request.setAttribute("activeNodes", allNodes.stream()
-                    .filter(node -> node.getLastSeen() != null && node.getLastSeen().isAfter(activeCutoff))
-                    .count());
-            request.setAttribute("rpcNodes", allNodes.stream().filter(NodeRecord::isRpcAvailable).count());
-            request.setAttribute("beaconNodes", allNodes.stream().filter(NodeRecord::isBeaconAvailable).count());
+            request.setAttribute("activeNodes", io.github.gavinruff007.torchnode.model.CanonicalNodes.count(endpointRows,
+                    node -> node.getLastSeen() != null && node.getLastSeen().isAfter(activeCutoff)));
+            request.setAttribute("rpcNodes", io.github.gavinruff007.torchnode.model.CanonicalNodes.count(endpointRows, NodeRecord::isRpcAvailable));
+            request.setAttribute("beaconNodes", io.github.gavinruff007.torchnode.model.CanonicalNodes.count(endpointRows, NodeRecord::isBeaconAvailable));
             OptionalDouble averageP2pConnect = allNodes.stream()
                     .filter(node -> node.getP2pConnectMs() != null)
                     .mapToLong(NodeRecord::getP2pConnectMs)
@@ -191,7 +191,7 @@ public class DashboardServlet extends HttpServlet {
         response.setHeader("Content-Disposition", "attachment; filename=torchnode-nodes.csv");
         try (NodeStore store = new SqliteNodeStore(databasePath)) {
             var writer = response.getWriter();
-            writer.println("IP,UDP_PORT,TCP_PORT,NODE_ID,TYPE,RPC,BEACON,LATENCY,CLIENT,BLOCK,LAST_SEEN,ENR,ENR_SEQUENCE,ENR_SIGNATURE,ENR_IDENTITY_COMPARISON");
+            writer.println("IP,UDP_PORT,TCP_PORT,NODE_ID,TYPE,RPC,BEACON,LATENCY,CLIENT,BLOCK,LAST_SEEN,ENR,ENR_SEQUENCE,ENR_SIGNATURE,ENR_IDENTITY_COMPARISON,DISCOVERY_SOURCE,DISCV5_PROVENANCE");
             for (NodeRecord node : store.findAll()) {
                 EnrEvidence enr = store instanceof SqliteNodeStore sqlite
                         ? EnrEvidence.latestValidated(sqlite.findEnrEvidence(node.identity())).orElse(null) : null;
@@ -201,7 +201,9 @@ public class DashboardServlet extends HttpServlet {
                         csv(node.isBeaconAvailable()), csv(node.getLatency()), csv(node.getClientVersion()),
                         csv(node.getBlockNumber()), csv(node.getLastSeen()),
                         csv(enr == null ? null : enr.record().text()), csv(enr == null ? null : enr.record().sequence()),
-                        csv(enr == null ? null : enr.signature()), csv(enr == null ? null : enr.identityComparison())));
+                        csv(enr == null ? null : enr.signature()), csv(enr == null ? null : enr.identityComparison()),
+                        csv(node.getDiscoverySource()), csv(store.findObservations(node.identity()).stream()
+                            .filter(o -> o.source().equals("discv5")).map(o -> o.observedAt() + " " + o.provenance()).collect(java.util.stream.Collectors.joining(" | ")))));
             }
         } catch (Exception e) {
             throw new IOException("Unable to export nodes", e);

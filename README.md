@@ -1,16 +1,31 @@
 # TorchNode Ethereum node crawler
 
-TorchNode discovers Ethereum execution nodes, inspects their public services, and stores the results in SQLite.
+TorchNode discovers Ethereum nodes, inspects their public services, and stores the results in SQLite.
 
-Discovery uses a provider boundary with discv4 as the sole implementation.
+Discovery uses a provider boundary with independent discv4 and discv5 providers.
 Cryptographic node identities are separate from endpoint observations, whose
 source, provenance and timestamps are retained in SQLite. See the
 [discovery architecture decision](docs/adr/discovery-architecture.md).
 
-TorchNode acquires and validates real ENRs over discv4, preserving raw records,
+TorchNode acquires and validates real ENRs over discv4 and discv5, preserving raw records,
 sequence, unknown fields and advertised endpoints independently of discovery
 and P2P evidence. IPv6 ENR fields are parsed/stored/displayed only; IPv6 probing
-and discv5 are not enabled. See [ENR support](docs/adr/enr-support.md).
+is not enabled. See [ENR support](docs/adr/enr-support.md).
+
+discv5 uses the pinned geth discovery engine through a separate helper. Build it
+before scanning with both providers:
+
+```shell
+cd p2p-helper
+GOCACHE=/private/tmp/torchnode-go-build go build -o ../target/torchnode-discovery-helper ./cmd/discovery
+cd ..
+```
+
+Set `TORCHNODE_DISCV5_HELPER` to override its path and
+`TORCHNODE_DISCV5_BOOTSTRAPS` to an ENR configuration file. Missing or failed
+helpers leave discv4 available. Observatory counts cryptographic identities;
+endpoint observations remain preserved. See [discv5 architecture](docs/adr/discv5-support.md).
+IPv6 ENR fields remain passive; IPv6 transport and NAT detection are not enabled.
 
 ## Build and run
 

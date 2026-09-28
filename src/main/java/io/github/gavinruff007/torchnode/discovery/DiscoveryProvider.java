@@ -16,5 +16,7 @@ public interface DiscoveryProvider extends AutoCloseable {
         discover(batch::add);
         return List.copyOf(batch);
     }
+    /** Additional ENR evidence, retaining its protocol-specific acquisition provenance. */
+    default void drainEnrEvidence(Consumer<io.github.gavinruff007.torchnode.enr.EnrEvidence> observer) {}
     @Override void close();
 }

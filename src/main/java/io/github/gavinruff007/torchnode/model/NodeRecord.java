@@ -40,12 +40,12 @@ public class NodeRecord {
     public NodeRecord(DiscoveryObservation observation) {
         this(observation.endpoint(NodeEndpoint.Purpose.DISCOVERY, NodeEndpoint.Transport.UDP).address(),
                 observation.endpoint(NodeEndpoint.Purpose.DISCOVERY, NodeEndpoint.Transport.UDP).port(),
-                observation.endpoint(NodeEndpoint.Purpose.P2P, NodeEndpoint.Transport.TCP).port(),
+                observation.endpoints().stream().filter(e -> e.purpose() == NodeEndpoint.Purpose.P2P && e.transport() == NodeEndpoint.Transport.TCP).mapToInt(NodeEndpoint::port).findFirst().orElse(0),
                 observation.identity().nodeId());
         this.discoverySource = observation.source();
         this.lastSeen = observation.observedAt();
         this.observations = List.of(observation);
-        this.p2pEndpoint = observation.endpoint(NodeEndpoint.Purpose.P2P, NodeEndpoint.Transport.TCP);
+        this.p2pEndpoint = observation.endpoints().stream().filter(e -> e.purpose() == NodeEndpoint.Purpose.P2P && e.transport() == NodeEndpoint.Transport.TCP).findFirst().orElse(null);
     }
 
     public NodeIdentity identity() { return new NodeIdentity(nodeId); }

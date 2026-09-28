@@ -177,6 +177,14 @@ function render(data) {
     const identity = el('identity'); identity.replaceChildren();
     const ethStatus = data.p2p && data.p2p.status;
     row(identity, 'Node ID', node.nodeId, 'Discovery', true, true);
+    const v5 = data.discv5 || [];
+    if (v5.length) {
+        const latest = v5[v5.length - 1];
+        row(identity, 'Discovery v5', 'OBSERVED', 'discv5');
+        row(identity, 'Last discv5 observation', latest.observedAt, 'discv5');
+        row(identity, 'discv5 advertised endpoints', JSON.stringify(latest.endpoints), 'discv5', true, true);
+        row(identity, 'discv5 acquisition/session evidence', latest.provenance, 'discv5', true, true);
+    }
     const enrEvidence = data.enr, enr = enrEvidence && enrEvidence.record;
     row(identity, 'ENR', enr ? enr.text : null, enr ? 'ENR' : null, true, true);
     row(identity, 'enode URL', node.enode, node.enode ? 'Derived' : null, true, true); row(identity, 'IP address', node.ip, 'Discovery', true);
