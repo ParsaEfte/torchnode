@@ -176,14 +176,37 @@ function render(data) {
 
     const identity = el('identity'); identity.replaceChildren();
     const ethStatus = data.p2p && data.p2p.status;
-    row(identity, 'Node ID', node.nodeId, 'Discovery', true, true); row(identity, 'ENR', null, null);
+    row(identity, 'Node ID', node.nodeId, 'Discovery', true, true);
+    const enrEvidence = data.enr, enr = enrEvidence && enrEvidence.record;
+    row(identity, 'ENR', enr ? enr.text : null, enr ? 'ENR' : null, true, true);
     row(identity, 'enode URL', node.enode, node.enode ? 'Derived' : null, true, true); row(identity, 'IP address', node.ip, 'Discovery', true);
     row(identity, 'Discovery UDP', node.discoveryEndpoint, 'Discovery', true);
     row(identity, 'P2P TCP', node.p2pEndpoint, 'Discovery', true);
     row(identity, 'Confirmed JSON-RPC', node.rpcEndpoint, data.rpc ? 'RPC' : null, true);
     row(identity, 'Confirmed Beacon API', node.beaconEndpoint, data.beacon ? 'Beacon' : null, true);
     row(identity, 'TCP port', node.tcpPort, 'Discovery'); row(identity, 'UDP port', node.udpPort, 'Discovery');
-    row(identity, 'Discovery protocol', node.discovery, 'Derived'); row(identity, 'ENR sequence', null, null);
+    row(identity, 'Discovery protocol', node.discovery, 'Derived');
+    if (enr) {
+        row(identity, 'ENR sequence', enr.sequence, 'ENR');
+        row(identity, 'Identity scheme', enr.identityScheme, 'ENR');
+        row(identity, 'ENR signature', enrEvidence.signature, 'ENR');
+        row(identity, 'ENR identity comparison', enrEvidence.identityComparison, 'ENR');
+        row(identity, 'ENR node identity', enr.identity && enr.identity.nodeId, 'ENR', true, true);
+        row(identity, 'ENR observed at', enrEvidence.observedAt, 'ENR');
+        row(identity, 'ENR provenance', enrEvidence.provenance, 'ENR', true);
+        const fields = enr.fields || {};
+        [['Advertised IPv4', 'ip'], ['Advertised TCP', 'tcp'], ['Advertised UDP', 'udp'],
+         ['Advertised IPv6 (passive)', 'ip6'], ['Advertised TCP6', 'tcp6'], ['Advertised UDP6', 'udp6']]
+            .forEach(([label, key]) => { if (available(fields[key])) row(identity, label, fields[key], 'ENR'); });
+        if (fields.eth) row(identity, 'ENR fork ID', fields.eth.forkHash + ' / ' + fields.eth.forkNext, 'ENR', true);
+        const unknown = (enr.entries || []).filter(entry => !entry.known);
+        if (unknown.length) row(identity, 'Unknown ENR entries (RLP hex)', JSON.stringify(unknown), 'ENR', true, true);
+        row(identity, 'Raw ENR RLP (hex)', enrEvidence.rawRlpHex, 'ENR', true, true);
+        Object.entries(data.enrComparisons || {}).forEach(([label, value]) => row(identity, label, value, 'Comparison'));
+    }
+    if (!enr && enrEvidence && enrEvidence.rawRlpHex) row(identity, 'Raw ENR RLP (hex)', enrEvidence.rawRlpHex, 'ENR', true, true);
+    if (data.enrAttempt && data.enrAttempt.outcome !== 'VALID')
+        row(identity, 'ENR acquisition/validation', data.enrAttempt.outcome + (data.enrAttempt.detail ? ': ' + data.enrAttempt.detail : ''), 'ENR', true);
     row(identity, 'Fork ID', ethStatus ? ethStatus.forkHash + ' / ' + ethStatus.forkNext : null,
         ethStatus ? 'ETH Status' : null, !!ethStatus);
 
@@ -258,7 +281,7 @@ function render(data) {
 }
 
 async function poll() {
-    try { const response = await fetch('/inspection/status?id=' + encodeURIComponent(inspectionId), {cache:'no-store'}); if (!response.ok) throw new Error('Inspection status unavailable'); const data = await response.json(); render(data); if (!data.complete) setTimeout(poll, 750); }
+    try { const response = await fetch('/inspection/status?id=' + encodeURIComponent(inspectionId), {cache:'no-store'}); if (response.status === 404) { location.replace('/'); return; } if (!response.ok) throw new Error('Inspection status unavailable'); const data = await response.json(); render(data); setTimeout(poll, data.complete ? 5000 : 750); }
     catch (error) { el('warning').hidden = false; el('warning').textContent = error.message; setTimeout(poll, 2000); }
 }
 poll();

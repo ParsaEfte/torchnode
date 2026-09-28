@@ -21,7 +21,7 @@ public class P2PSender {
 
     private static String cachedPublicIP = null;
 
-    public static void sendPing(NodeIdentity myNode, String targetIP, int targetPort, DatagramSocket socket) throws Exception {
+    public static void sendPing(LocalNodeIdentity myNode, String targetIP, int targetPort, DatagramSocket socket) throws Exception {
         InetAddress targetAddr = InetAddress.getByName(targetIP);
 
         // Get public IP
@@ -57,7 +57,7 @@ public class P2PSender {
         System.out.println("Sending Ping to " + targetIP + ":" + targetPort + " (our public IP: " + publicIP + ")");
     }
 
-    public static void sendPong(NodeIdentity myNode, String targetIP, int targetPort,
+    public static void sendPong(LocalNodeIdentity myNode, String targetIP, int targetPort,
                                 DatagramSocket socket, byte[] pingHash) throws Exception {
         InetAddress targetAddr = InetAddress.getByName(targetIP);
 

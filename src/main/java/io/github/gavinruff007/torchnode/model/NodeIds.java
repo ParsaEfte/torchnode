@@ -2,7 +2,7 @@ package io.github.gavinruff007.torchnode.model;
 
 import java.util.regex.Pattern;
 
-/** Normalizes discv4 64-byte public keys, including rows written by the old scanner. */
+/** Normalizes Ethereum 64-byte public-key identities, including rows written by the old scanner. */
 public final class NodeIds {
     private static final Pattern HEX = Pattern.compile("(?i)[0-9a-f]{128}");
 

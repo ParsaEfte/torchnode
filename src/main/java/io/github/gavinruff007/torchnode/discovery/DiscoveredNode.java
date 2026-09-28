@@ -34,7 +34,7 @@ public class DiscoveredNode {
     }
 
     public String getKey() {
-        return ip + ":" + udpPort;
+        return nodeIdHex + "@" + ip + ":" + udpPort + ":" + tcpPort;
     }
 
     @Override

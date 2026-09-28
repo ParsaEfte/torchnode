@@ -1,7 +1,8 @@
 package io.github.gavinruff007.torchnode.dashboard;
 
 import io.github.gavinruff007.torchnode.daemon.ScanDaemon;
-import io.github.gavinruff007.torchnode.discovery.NodeIdentity;
+import io.github.gavinruff007.torchnode.discovery.LocalNodeIdentity;
+import io.github.gavinruff007.torchnode.discovery.Discv4DiscoveryProvider;
 
 import java.net.DatagramSocket;
 
@@ -26,7 +27,7 @@ public class ScannerService {
         socket = new DatagramSocket(30303);
         daemon = new ScanDaemon(databasePath);
         try {
-            daemon.start(new NodeIdentity(), socket, BOOTSTRAP_NODES);
+            daemon.start(new Discv4DiscoveryProvider(new LocalNodeIdentity(), socket, BOOTSTRAP_NODES));
         } catch (Exception e) {
             socket.close();
             socket = null;
@@ -42,8 +43,21 @@ public class ScannerService {
         if (socket != null) {
             socket.close();
         }
+        boolean interrupted = false;
+        if (daemon != null) {
+            boolean stopped = false;
+            while (!stopped) {
+                try {
+                    daemon.awaitStopped();
+                    stopped = true;
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+        }
         daemon = null;
         socket = null;
+        if (interrupted) Thread.currentThread().interrupt();
     }
 
     public synchronized boolean isRunning() {

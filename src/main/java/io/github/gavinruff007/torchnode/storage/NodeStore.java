@@ -1,12 +1,16 @@
 package io.github.gavinruff007.torchnode.storage;
 
 import io.github.gavinruff007.torchnode.model.NodeRecord;
+import io.github.gavinruff007.torchnode.model.DiscoveryObservation;
+import io.github.gavinruff007.torchnode.model.NodeIdentity;
 import io.github.gavinruff007.torchnode.model.NodeType;
 
 import java.util.List;
 import java.util.Optional;
 
 public interface NodeStore extends AutoCloseable {
+    void saveObservation(DiscoveryObservation observation);
+    List<DiscoveryObservation> findObservations(NodeIdentity identity);
     void save(NodeRecord node);
     void saveAll(List<NodeRecord> nodes);
     Optional<NodeRecord> findByKey(String key);

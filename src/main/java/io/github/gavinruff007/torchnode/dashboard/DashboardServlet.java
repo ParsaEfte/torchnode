@@ -1,6 +1,7 @@
 package io.github.gavinruff007.torchnode.dashboard;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.gavinruff007.torchnode.enr.EnrEvidence;
 import io.github.gavinruff007.torchnode.inspection.InspectionService;
 import io.github.gavinruff007.torchnode.model.NodeRecord;
 import io.github.gavinruff007.torchnode.model.NodeType;
@@ -42,6 +43,7 @@ public class DashboardServlet extends HttpServlet {
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
+        response.setHeader("Cache-Control", "no-store");
         if ("/export.csv".equals(request.getServletPath())) {
             exportCsv(response);
             return;
@@ -133,6 +135,15 @@ public class DashboardServlet extends HttpServlet {
                     scannerService.stop();
                     redirect(response, "message", "Scanner stopped");
                 }
+                case "/data/clear" -> {
+                    synchronized (scannerService) {
+                        scannerService.stop();
+                        try (SqliteNodeStore store = new SqliteNodeStore(databasePath)) {
+                            inspectionService.clearCollectedData(store);
+                        }
+                    }
+                    redirect(response, "message", "All collected data cleared. Scanner stopped.");
+                }
                 default -> response.sendError(HttpServletResponse.SC_NOT_FOUND);
             }
         } catch (Exception e) {
@@ -147,17 +158,19 @@ public class DashboardServlet extends HttpServlet {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing node key");
             return;
         }
-        try (NodeStore store = new SqliteNodeStore(databasePath)) {
-            NodeRecord node = store.findByKey(key).orElse(null);
-            if (node == null) {
-                response.sendError(HttpServletResponse.SC_NOT_FOUND, "Node not found");
-                return;
+        synchronized (scannerService) {
+            try (NodeStore store = new SqliteNodeStore(databasePath)) {
+                NodeRecord node = store.findByKey(key).orElse(null);
+                if (node == null) {
+                    response.sendError(HttpServletResponse.SC_NOT_FOUND, "Node not found");
+                    return;
+                }
+                request.setAttribute("node", node);
+                request.setAttribute("inspectionId", inspectionService.inspect(node));
+                request.getRequestDispatcher("/WEB-INF/views/inspection.jsp").forward(request, response);
+            } catch (java.sql.SQLException e) {
+                throw new ServletException("Unable to load node", e);
             }
-            request.setAttribute("node", node);
-            request.setAttribute("inspectionId", inspectionService.inspect(node));
-            request.getRequestDispatcher("/WEB-INF/views/inspection.jsp").forward(request, response);
-        } catch (java.sql.SQLException e) {
-            throw new ServletException("Unable to load node", e);
         }
     }
 
@@ -178,13 +191,17 @@ public class DashboardServlet extends HttpServlet {
         response.setHeader("Content-Disposition", "attachment; filename=torchnode-nodes.csv");
         try (NodeStore store = new SqliteNodeStore(databasePath)) {
             var writer = response.getWriter();
-            writer.println("IP,UDP_PORT,TCP_PORT,NODE_ID,TYPE,RPC,BEACON,LATENCY,CLIENT,BLOCK,LAST_SEEN");
+            writer.println("IP,UDP_PORT,TCP_PORT,NODE_ID,TYPE,RPC,BEACON,LATENCY,CLIENT,BLOCK,LAST_SEEN,ENR,ENR_SEQUENCE,ENR_SIGNATURE,ENR_IDENTITY_COMPARISON");
             for (NodeRecord node : store.findAll()) {
+                EnrEvidence enr = store instanceof SqliteNodeStore sqlite
+                        ? EnrEvidence.latestValidated(sqlite.findEnrEvidence(node.identity())).orElse(null) : null;
                 writer.println(String.join(",",
                         csv(node.getIp()), csv(node.getUdpPort()), csv(node.getTcpPort()),
                         csv(node.getNodeId()), csv(node.getNodeType()), csv(node.isRpcAvailable()),
                         csv(node.isBeaconAvailable()), csv(node.getLatency()), csv(node.getClientVersion()),
-                        csv(node.getBlockNumber()), csv(node.getLastSeen())));
+                        csv(node.getBlockNumber()), csv(node.getLastSeen()),
+                        csv(enr == null ? null : enr.record().text()), csv(enr == null ? null : enr.record().sequence()),
+                        csv(enr == null ? null : enr.signature()), csv(enr == null ? null : enr.identityComparison())));
             }
         } catch (Exception e) {
             throw new IOException("Unable to export nodes", e);

@@ -1,6 +1,7 @@
 package io.github.gavinruff007.torchnode.inspection;
 
 import io.github.gavinruff007.torchnode.model.NodeRecord;
+import io.github.gavinruff007.torchnode.enr.EnrEvidence;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -22,11 +23,13 @@ public class InspectionResult {
     private List<String> rpcProbeEndpoints = List.of();
     private List<String> beaconProbeEndpoints = List.of();
     private boolean complete;
+    private EnrEvidence enrEvidence;
+    private final List<EnrEvidence> enrHistory = new ArrayList<>();
 
     public InspectionResult(String id, NodeRecord node) {
         this.id = id;
         this.node = node;
-        diagnostic("Discovery", State.PASS, null, "Observed through discv4", "Discovery");
+        diagnostic("Discovery", State.PASS, null, "Observed through " + node.getDiscoverySource(), "Discovery");
         diagnostic("P2P TCP", State.CHECKING, null, null, "Scanner");
         diagnostic("RLPx Auth", State.NOT_TESTED, null,
                 "Waiting for P2P TCP connection", "RLPx");
@@ -36,6 +39,7 @@ public class InspectionResult {
                 "Requires a negotiated ETH capability and Status exchange", "ETH");
         diagnostic("JSON-RPC", State.CHECKING, null, null, "RPC");
         diagnostic("Beacon API", State.CHECKING, null, null, "Beacon");
+        diagnostic("ENR", State.CHECKING, null, null, "ENR");
         event("Inspection started", node.getIp() + ":" + node.getTcpPort());
     }
 
@@ -69,6 +73,38 @@ public class InspectionResult {
     public synchronized void setP2p(Map<String, Object> p2p) { this.p2p = p2p; }
     public synchronized void setRpcProbeEndpoints(List<String> endpoints) { this.rpcProbeEndpoints = List.copyOf(endpoints); }
     public synchronized void setBeaconProbeEndpoints(List<String> endpoints) { this.beaconProbeEndpoints = List.copyOf(endpoints); }
+    public synchronized void loadEnrEvidence(List<EnrEvidence> evidence) { enrHistory.addAll(evidence); }
+    public synchronized EnrEvidence enrEvidence() { return enrEvidence; }
+    public synchronized void setEnrEvidence(EnrEvidence evidence) {
+        enrEvidence = evidence; enrHistory.add(evidence);
+        State state = evidence.usable() ? State.PASS : evidence.received() ? State.FAILED
+                : evidence.outcome().endsWith("TIMEOUT") ? State.TIMEOUT : State.UNAVAILABLE;
+        diagnostic("ENR", state, null, evidence.detail(), evidence.outcome(), "ENR");
+    }
+    private EnrEvidence selectedEnr() {
+        return EnrEvidence.latestValidated(enrHistory).orElse(enrEvidence);
+    }
+    private Map<String, Object> enrComparisons(EnrEvidence selected) {
+        Map<String, Object> comparisons = new LinkedHashMap<>();
+        if (selected == null || !selected.usable()) return comparisons;
+        var fields = selected.record().fields();
+        comparisons.put("IPv4 vs discovery", compare(fields.ip(), node.getIp()));
+        comparisons.put("TCP vs discovery", compare(fields.tcp(), node.getTcpPort()));
+        comparisons.put("UDP vs discovery", compare(fields.udp(), node.getUdpPort()));
+        Map<String, Object> status = statusMap();
+        if (fields.eth() != null && status != null) {
+            comparisons.put("Fork hash vs ETH Status", compare(fields.eth().forkHash(), status.get("forkHash")));
+            comparisons.put("Fork next vs ETH Status", compare(fields.eth().forkNext(), status.get("forkNext")));
+        }
+        long variants = enrHistory.stream().filter(EnrEvidence::usable)
+                .filter(e -> e.record().sequence().equals(selected.record().sequence())).map(EnrEvidence::rawRlpHex).distinct().count();
+        if (variants > 1) comparisons.put("Sequence", "CONFLICTING_RECORDS");
+        return comparisons;
+    }
+    private static String compare(Object a, Object b) {
+        return a == null || b == null ? "NOT_AVAILABLE" : a.toString().equalsIgnoreCase(b.toString()) ? "MATCH" : "MISMATCH";
+    }
+
     public synchronized void complete() {
         complete = true;
         event("Inspection completed", (System.currentTimeMillis() - startedAt.toEpochMilli()) + " ms");
@@ -87,6 +123,10 @@ public class InspectionResult {
         root.put("rpcProbeEndpoints", rpcProbeEndpoints);
         root.put("beaconProbeEndpoints", beaconProbeEndpoints);
         root.put("p2p", p2p);
+        EnrEvidence selected = selectedEnr();
+        root.put("enr", selected == null ? null : selected.toMap());
+        root.put("enrAttempt", enrEvidence == null ? null : enrEvidence.toMap());
+        root.put("enrComparisons", enrComparisons(selected));
         root.put("networkVerification", NetworkVerification.from(rpc, beacon,
                 p2p == null ? null : statusMap()));
         root.put("diagnostics", new ArrayList<>(diagnostics.values()));
@@ -137,7 +177,7 @@ public class InspectionResult {
         value.put("tcpPort", node.getTcpPort());
         value.put("nodeId", node.getNodeId().isBlank() ? null : "0x" + node.getNodeId());
         value.put("enode", enodeUrl());
-        value.put("discovery", "discv4");
+        value.put("discovery", node.getDiscoverySource());
         value.put("discoveryEndpoint", node.getIp() + ":" + node.getUdpPort());
         value.put("p2pEndpoint", node.getTcpPort() > 0 ? node.getIp() + ":" + node.getTcpPort() : null);
         value.put("rpcEndpoint", rpc == null ? null : rpc.get("endpoint"));

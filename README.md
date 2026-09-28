@@ -2,6 +2,16 @@
 
 TorchNode discovers Ethereum execution nodes, inspects their public services, and stores the results in SQLite.
 
+Discovery uses a provider boundary with discv4 as the sole implementation.
+Cryptographic node identities are separate from endpoint observations, whose
+source, provenance and timestamps are retained in SQLite. See the
+[discovery architecture decision](docs/adr/discovery-architecture.md).
+
+TorchNode acquires and validates real ENRs over discv4, preserving raw records,
+sequence, unknown fields and advertised endpoints independently of discovery
+and P2P evidence. IPv6 ENR fields are parsed/stored/displayed only; IPv6 probing
+and discv5 are not enabled. See [ENR support](docs/adr/enr-support.md).
+
 ## Build and run
 
 ```shell
@@ -99,8 +109,9 @@ no public peer is required.
 Geth, Reth, Nethermind, Besu and Erigon binaries are not bundled, so live
 multi-client interoperability must be run separately before claiming coverage.
 The Status `latestHash` is the hash of the latest **available full block**, not
-necessarily the canonical chain head. As of 2026-09-24, a non-fixture ETH
-Status exchange has **not** been observed. A locally built geth 1.17.6 Mainnet
-node completed Auth and Hello with ETH/72 negotiated, but its unsynced head was
-rejected as `LOCAL_HEAD_STALE` before TorchNode sent Status. The P2P milestone
-therefore remains open.
+necessarily the canonical chain head. A first non-fixture bidirectional ETH/72
+Status exchange was captured on Sepolia on 2026-09-25 using a verified local
+light-client context and a separate unmodified geth 1.17.6 peer. The peer was
+still at genesis, and Reth, Nethermind and Besu Status interoperability remains
+unevaluated. The P2P milestone therefore remains open. See the
+[inspection ADR](docs/adr/rlpx-p2p-inspection.md) for the evidence and limits.

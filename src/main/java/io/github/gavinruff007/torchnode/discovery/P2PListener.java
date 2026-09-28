@@ -18,9 +18,16 @@ public class P2PListener {
     
 
 
-    public static void startListening(DatagramSocket socket, NodeIdentity myNode,
+    public static void startListening(DatagramSocket socket, LocalNodeIdentity myNode,
                                       ConcurrentHashMap<String, DiscoveredNode> discoveredNodesMap,
                                       ConcurrentHashMap<String, BondState> bondStates) {
+        startListening(socket, myNode, discoveredNodesMap, bondStates, (node, sender) -> {});
+    }
+
+    public static Thread startListening(DatagramSocket socket, LocalNodeIdentity myNode,
+                                       ConcurrentHashMap<String, DiscoveredNode> discoveredNodesMap,
+                                       ConcurrentHashMap<String, BondState> bondStates,
+                                       java.util.function.BiConsumer<DiscoveredNode, String> observer) {
         Thread listenerThread = new Thread(() -> {
             byte[] buffer = new byte[2048];
             System.out.println("Listener started. Waiting for Ethereum nodes to talk back...");
@@ -57,7 +64,7 @@ public class P2PListener {
 
                     } else if (packetType == 0x04) {
                         System.out.println("[←] NEIGHBORS from " + sender);
-                        handleNeighbors(rlpData,discoveredNodesMap);
+                        handleNeighbors(rlpData, discoveredNodesMap, observer, sender);
 
                     } else {
                         System.out.printf("[WARN] Unknown packet type: 0x%02x from %s%n", packetType, sender);
@@ -74,10 +81,11 @@ public class P2PListener {
 
         listenerThread.setDaemon(true);
         listenerThread.start();
+        return listenerThread;
     }
 
     private static void handlePing(DatagramSocket socket, DatagramPacket packet,
-                                   byte[] pingHash, NodeIdentity myNode,
+                                   byte[] pingHash, LocalNodeIdentity myNode,
                                    ConcurrentHashMap<String, BondState> bondStates) {
         try {
             InetAddress senderIP = packet.getAddress();
@@ -105,7 +113,8 @@ public class P2PListener {
         }
     }
 
-    private static void handleNeighbors(byte[] rlpData,ConcurrentHashMap<String, DiscoveredNode> discoveredNodesMap) {
+    static void handleNeighbors(byte[] rlpData, ConcurrentHashMap<String, DiscoveredNode> discoveredNodesMap,
+                                java.util.function.BiConsumer<DiscoveredNode, String> observer, String sender) {
         try {
             RlpList outerDecoded = RlpDecoder.decode(rlpData);
             if (outerDecoded.getValues().isEmpty()) {
@@ -167,7 +176,8 @@ public class P2PListener {
                 if (nodeId.length == 64) {
                     DiscoveredNode node = new DiscoveredNode(ip, udpPort, tcpPort, nodeId, nodeIdHex);
                     String key = node.getKey();
-                    discoveredNodesMap.putIfAbsent(key, node);
+                    discoveredNodesMap.put(key, node);
+                    observer.accept(node, sender);
                 } else {
                     System.err.printf("[WARN] NodeID length %d (expected 64), skipping storage%n",
                             nodeId.length);

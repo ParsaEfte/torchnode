@@ -7,9 +7,11 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.sql.DriverManager;
+import java.sql.SQLException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SqliteNodeStoreTest {
     @TempDir
@@ -26,7 +28,7 @@ class SqliteNodeStoreTest {
             inspected.setLatency(42L);
             store.update(inspected);
 
-            store.save(new NodeRecord("127.0.0.1", 30303, 30304, "cd".repeat(64)));
+            store.save(new NodeRecord("127.0.0.1", 30303, 30304, "ab".repeat(64)));
 
             NodeRecord stored = store.findByKey("127.0.0.1:30303").orElseThrow();
             assertTrue(stored.isRpcAvailable());
@@ -34,7 +36,7 @@ class SqliteNodeStoreTest {
             assertEquals("Geth/v1.14", stored.getClientVersion());
             assertEquals(42L, stored.getLatency());
             assertEquals(30304, stored.getTcpPort());
-            assertEquals("cd".repeat(64), stored.getNodeId());
+            assertEquals("ab".repeat(64), stored.getNodeId());
         }
     }
 
@@ -63,6 +65,64 @@ class SqliteNodeStoreTest {
             try (var rows = query.executeQuery()) {
                 assertTrue(rows.next());
                 assertEquals(0, rows.getInt(1));
+            }
+        }
+    }
+
+    @Test
+    void clearRemovesNodesAndObservationsButKeepsSchemaAndAllowsNewDiscovery() throws Exception {
+        String path = tempDir.resolve("clear.db").toString();
+        try (SqliteNodeStore store = new SqliteNodeStore(path)) {
+            for (int i = 1; i <= 2; i++) {
+                NodeRecord node = new NodeRecord("192.0.2." + i, 30303, 30303, "id" + i);
+                store.save(node);
+                node.setRpcAvailable(true);
+                node.setBeaconAvailable(true);
+                node.setClientVersion("Geth/test");
+                store.update(node);
+                store.saveP2pObservation(node.getKey(), "{}", "{}");
+            }
+            assertEquals(2, store.count());
+            store.clearCollectedData();
+            assertEquals(0, store.count());
+            store.clearCollectedData();
+        }
+        try (SqliteNodeStore store = new SqliteNodeStore(path)) {
+            assertEquals(0, store.count());
+            store.save(new NodeRecord("192.0.2.3", 30303, 30303, "new"));
+            assertEquals(1, store.count());
+        }
+        try (var connection = DriverManager.getConnection("jdbc:sqlite:" + path);
+             var query = connection.createStatement()) {
+            try (var rows = query.executeQuery("SELECT COUNT(*) FROM p2p_observations")) {
+                assertTrue(rows.next());
+                assertEquals(0, rows.getInt(1));
+            }
+            try (var rows = query.executeQuery("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('nodes','p2p_observations')")) {
+                assertTrue(rows.next());
+                assertEquals(2, rows.getInt(1));
+            }
+        }
+    }
+
+    @Test
+    void clearRollsBackIfDeletingNodesFails() throws Exception {
+        String path = tempDir.resolve("rollback.db").toString();
+        try (SqliteNodeStore store = new SqliteNodeStore(path)) {
+            NodeRecord node = new NodeRecord("192.0.2.1", 30303, 30303, "id");
+            store.save(node);
+            store.saveP2pObservation(node.getKey(), "{}", "{}");
+            try (var connection = DriverManager.getConnection("jdbc:sqlite:" + path);
+                 var statement = connection.createStatement()) {
+                statement.execute("CREATE TRIGGER block_clear BEFORE DELETE ON nodes BEGIN SELECT RAISE(ABORT, 'blocked'); END");
+            }
+            assertThrows(SQLException.class, store::clearCollectedData);
+            assertEquals(1, store.count());
+            try (var connection = DriverManager.getConnection("jdbc:sqlite:" + path);
+                 var statement = connection.createStatement();
+                 var rows = statement.executeQuery("SELECT COUNT(*) FROM p2p_observations")) {
+                assertTrue(rows.next());
+                assertEquals(1, rows.getInt(1));
             }
         }
     }

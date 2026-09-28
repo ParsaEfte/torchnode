@@ -77,7 +77,7 @@ public final class GoEthereumP2pInspector {
         Process process = null;
         try {
             process = new ProcessBuilder(helper.toString()).redirectError(ProcessBuilder.Redirect.DISCARD).start();
-            byte[] request = JSON.writeValueAsBytes(Map.of("ip", node.getIp(), "tcpPort", node.getTcpPort(),
+            byte[] request = JSON.writeValueAsBytes(Map.of("ip", node.getP2pEndpoint().address(), "tcpPort", node.getP2pEndpoint().port(),
                     "nodeId", node.getNodeId() == null ? "" : node.getNodeId()));
             try (var stdin = process.getOutputStream()) { stdin.write(request); }
             if (!process.waitFor(15, TimeUnit.SECONDS))

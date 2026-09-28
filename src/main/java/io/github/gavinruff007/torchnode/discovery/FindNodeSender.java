@@ -17,7 +17,7 @@ import java.util.List;
 
 public class FindNodeSender {
 
-    public static void sendFindNode(NodeIdentity myNode, String targetIP, int targetPort,
+    public static void sendFindNode(LocalNodeIdentity myNode, String targetIP, int targetPort,
                                     DatagramSocket socket, byte[] targetNodeId) throws Exception {
         InetAddress targetAddr = InetAddress.getByName(targetIP);
 

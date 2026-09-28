@@ -2,15 +2,68 @@ package io.github.gavinruff007.torchnode.dashboard;
 
 import io.github.gavinruff007.torchnode.model.NodeRecord;
 import io.github.gavinruff007.torchnode.model.NodeType;
+import io.github.gavinruff007.torchnode.inspection.InspectionService;
+import io.github.gavinruff007.torchnode.storage.SqliteNodeStore;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.lang.reflect.Proxy;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class DashboardServletTest {
+    @TempDir Path tempDir;
+
+    @Test
+    void clearRequiresPostAndResetsCachedInspectionResults() throws Exception {
+        String path = tempDir.resolve("dashboard.db").toString();
+        NodeRecord node = new NodeRecord("192.0.2.1", 30303, 0, "id");
+        try (SqliteNodeStore store = new SqliteNodeStore(path)) { store.save(node); }
+        InspectionService inspections = new InspectionService(path);
+        try {
+            String inspectionId = inspections.inspect(node);
+            DashboardServlet servlet = new DashboardServlet(path, new ScannerService(path), inspections);
+            AtomicInteger error = new AtomicInteger();
+            AtomicReference<String> redirect = new AtomicReference<>();
+            HttpServletResponse response = (HttpServletResponse) Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class[]{HttpServletResponse.class}, (proxy, method, args) -> {
+                        if ("sendError".equals(method.getName())) error.set((int) args[0]);
+                        if ("sendRedirect".equals(method.getName())) redirect.set((String) args[0]);
+                        return null;
+                    });
+            HttpSession session = (HttpSession) Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class[]{HttpSession.class}, (proxy, method, args) ->
+                            "getAttribute".equals(method.getName()) ? "token" : null);
+            HttpServletRequest request = (HttpServletRequest) Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class[]{HttpServletRequest.class}, (proxy, method, args) ->
+                            switch (method.getName()) {
+                                case "getServletPath" -> "/data/clear";
+                                case "getParameter" -> "csrf".equals(args[0]) ? "token" : null;
+                                case "getSession" -> session;
+                                default -> null;
+                            });
+            servlet.doGet(request, response);
+            assertEquals(404, error.get());
+            try (SqliteNodeStore store = new SqliteNodeStore(path)) { assertEquals(1, store.count()); }
+            servlet.doPost(request, response);
+            assertTrue(redirect.get().contains("message="));
+            try (SqliteNodeStore store = new SqliteNodeStore(path)) { assertEquals(0, store.count()); }
+            servlet.doPost(request, response);
+            assertTrue(redirect.get().contains("message="));
+            assertTrue(inspections.snapshot(inspectionId).isEmpty());
+        } finally {
+            inspections.close();
+        }
+    }
     @Test
     void inspectedNodeHasHigherDetailScore() {
         NodeRecord basic = new NodeRecord("127.0.0.1", 30303, 30303, "basic");
@@ -47,5 +100,75 @@ class DashboardServletTest {
         NodeRecord node = new NodeRecord(ip, 30303, 30303, null);
         node.setLastSeen(Instant.parse(seen));
         return node;
+    }
+    @Test
+    void successfulDeepApisPersistCountAndExportDespiteUnavailableP2p() throws Exception {
+        String path = tempDir.resolve("api-summary.db").toString();
+        var rpc = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 8545), 0);
+        var beacon = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 5052), 0);
+        rpc.createContext("/", exchange -> {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String method = mapper.readTree(exchange.getRequestBody()).path("method").asText();
+            Object result = switch (method) {
+                case "web3_clientVersion" -> "Geth/v1.17/test";
+                case "eth_syncing" -> false;
+                case "net_version" -> "1";
+                default -> "0x1";
+            };
+            byte[] response = mapper.writeValueAsBytes(java.util.Map.of("jsonrpc", "2.0", "id", 1, "result", result));
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response); exchange.close();
+        });
+        beacon.createContext("/", exchange -> {
+            byte[] response = "{\"data\":{\"version\":\"Lighthouse/v1.0\"}}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response); exchange.close();
+        });
+        rpc.start(); beacon.start();
+        try (InspectionService inspections = new InspectionService(path)) {
+            NodeRecord node = new NodeRecord("127.0.0.1", 30301, 0, "ab".repeat(64));
+            try (SqliteNodeStore store = new SqliteNodeStore(path)) { store.save(node); }
+            String id = inspections.inspect(node);
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(15);
+            while (!Boolean.TRUE.equals(inspections.snapshot(id).orElseThrow().get("complete")) && System.nanoTime() < deadline)
+                Thread.sleep(20);
+            var snapshot = inspections.snapshot(id).orElseThrow();
+            assertEquals(true, snapshot.get("complete"));
+            assertTrue(snapshot.get("rpc") != null); assertTrue(snapshot.get("beacon") != null);
+            try (SqliteNodeStore store = new SqliteNodeStore(path)) {
+                NodeRecord stored = store.findByKey(node.getKey()).orElseThrow();
+                assertTrue(stored.isRpcAvailable()); assertTrue(stored.isBeaconAvailable());
+                assertEquals(NodeType.FULL_NODE, stored.getNodeType());
+            }
+            var attributes = new java.util.HashMap<String, Object>();
+            var csv = new java.io.StringWriter();
+            var writer = new java.io.PrintWriter(csv);
+            var servlet = new DashboardServlet(path, new ScannerService(path), inspections);
+            HttpServletResponse response = (HttpServletResponse) Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class[]{HttpServletResponse.class}, (proxy, method, args) ->
+                            "getWriter".equals(method.getName()) ? writer : null);
+            HttpSession session = (HttpSession) Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class[]{HttpSession.class}, (proxy, method, args) ->
+                            "getAttribute".equals(method.getName()) ? "token" : null);
+            jakarta.servlet.RequestDispatcher dispatcher = (jakarta.servlet.RequestDispatcher) Proxy.newProxyInstance(
+                    getClass().getClassLoader(), new Class[]{jakarta.servlet.RequestDispatcher.class}, (proxy, method, args) -> null);
+            for (String route : List.of("/", "/export.csv")) {
+                HttpServletRequest request = (HttpServletRequest) Proxy.newProxyInstance(
+                        getClass().getClassLoader(), new Class[]{HttpServletRequest.class}, (proxy, method, args) -> {
+                            return switch (method.getName()) {
+                                case "getServletPath" -> route;
+                                case "getSession" -> session;
+                                case "setAttribute" -> { attributes.put((String) args[0], args[1]); yield null; }
+                                case "getRequestDispatcher" -> dispatcher;
+                                default -> null;
+                            };
+                        });
+                servlet.doGet(request, response);
+            }
+            assertEquals(1L, attributes.get("rpcNodes")); assertEquals(1L, attributes.get("beaconNodes"));
+            writer.flush();
+            assertTrue(csv.toString().contains("30301")); assertTrue(csv.toString().contains("ab".repeat(64)));
+            assertTrue(csv.toString().contains("Geth/v1.17/test"));
+        } finally { rpc.stop(0); beacon.stop(0); }
     }
 }

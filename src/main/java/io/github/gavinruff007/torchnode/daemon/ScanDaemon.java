@@ -1,14 +1,12 @@
 package io.github.gavinruff007.torchnode.daemon;
 
-import io.github.gavinruff007.torchnode.discovery.*;
+import io.github.gavinruff007.torchnode.discovery.DiscoveryProvider;
+import io.github.gavinruff007.torchnode.enr.EnrAcquirer;
 import io.github.gavinruff007.torchnode.inspection.NodeInspector;
-import io.github.gavinruff007.torchnode.model.BondState;
 import io.github.gavinruff007.torchnode.model.NodeRecord;
 import io.github.gavinruff007.torchnode.storage.NodeStore;
 import io.github.gavinruff007.torchnode.storage.SqliteNodeStore;
-import org.web3j.utils.Numeric;
 
-import java.net.DatagramSocket;
 import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.*;
@@ -22,61 +20,43 @@ public class ScanDaemon {
 
     private volatile boolean running = false;
     private Thread scanThread;
-    public ConcurrentHashMap<String, DiscoveredNode> discoveredNodes = new ConcurrentHashMap<>();
-    private Set<String> queriedNodes = new HashSet<>();
-    private Set<String> inspectedNodes = ConcurrentHashMap.newKeySet();
-    private ConcurrentHashMap<String, BondState> bondStates = new ConcurrentHashMap<>();
+    private final Set<String> inspectedNodes = ConcurrentHashMap.newKeySet();
+    private DiscoveryProvider provider;
+    private EnrAcquirer enrAcquirer;
 
     public ScanDaemon(String databasePath) {
         this.databasePath = databasePath;
     }
 
-    public void start(NodeIdentity myNode, DatagramSocket socket, String[] bootstrapNodes) throws SQLException {
+    public void start(DiscoveryProvider provider) throws SQLException {
         if (running) {
             System.out.println("[ScanDaemon] Already running");
             return;
         }
 
-        running = true;
         NodeStore nodeStore = new SqliteNodeStore(databasePath);
+        this.provider = provider;
+        this.enrAcquirer = new EnrAcquirer();
+        running = true;
 
         scanThread = new Thread(() -> {
             try {
                 System.out.println("[ScanDaemon] Starting discovery...");
 
-                P2PListener.startListening(socket, myNode, discoveredNodes,bondStates);
-
-                for (String bootstrap : bootstrapNodes) {
-                    String[] parts = bootstrap.split(":");
-                    String ip = parts[0];
-                    int port = Integer.parseInt(parts[1]);
-
-                    System.out.println("[ScanDaemon] Pinging bootstrap: " + bootstrap);
-                    P2PSender.sendPing(myNode, ip, port, socket);
-
-                    String key = ip + ":" + port;
-                    bondStates.put(key, new BondState(true, false, false, false));
-                }
-
-                Thread.sleep(2000);
-
-                for (String bootstrap : bootstrapNodes) {
-                    String[] parts = bootstrap.split(":");
-                    String ip = parts[0];
-                    int port = Integer.parseInt(parts[1]);
-                    String key = ip + ":" + port;
-
-                    BondState state = bondStates.get(key);
-                    if (state != null && state.isFullyBonded()) {
-                        System.out.println("[ScanDaemon] Sending FIND_NODE to bootstrap: " + bootstrap);
-                        byte[] publicKey = Numeric.hexStringToByteArray(myNode.getNodeId());
-                        FindNodeSender.sendFindNode(myNode, ip, port, socket, publicKey);
-                    }
-                }
+                provider.start();
 
                 while (running) {
-                    crawlRecursively(socket, myNode, nodeStore, 3, 1);
+                    provider.discover(observation -> {
+                        nodeStore.saveObservation(observation);
+                        enrAcquirer.acquire(new NodeRecord(observation), evidence -> {
+                            if (evidence.outcome().equals("BUSY")) return;
+                            try (SqliteNodeStore enrStore = new SqliteNodeStore(databasePath)) { enrStore.saveEnrEvidence(evidence); }
+                            catch (Exception e) { System.err.println("[ENR] Evidence persistence failed: " + e.getMessage()); }
+                        });
+                    });
+                    if (!running) break;
                     inspectNewNodes(nodeStore);
+                    if (!running) break;
                     Thread.sleep(60000);
                 }
 
@@ -87,7 +67,13 @@ public class ScanDaemon {
                 e.printStackTrace();
             } finally {
                 running = false;
-                nodeStore.close();
+                provider.close();
+                enrAcquirer.close();
+                try {
+                    provider.discover(nodeStore::saveObservation);
+                } catch (Exception e) {
+                    System.err.println("[ScanDaemon] Failed to persist final discovery evidence: " + e.getMessage());
+                } finally { nodeStore.close(); }
             }
         });
 
@@ -96,65 +82,13 @@ public class ScanDaemon {
         System.out.println("[ScanDaemon] Started");
     }
 
-    private void crawlRecursively(DatagramSocket socket, NodeIdentity myNode, NodeStore nodeStore, int maxDepth, int currentDepth) {
-        if (currentDepth > maxDepth) {
-            return;
-        }
-
-        List<DiscoveredNode> nodes = new ArrayList<>(discoveredNodes.values());
-        System.out.println("[Crawl] Depth " + currentDepth + " - Processing " + nodes.size() + " nodes");
-
-        for (DiscoveredNode node : nodes) {
-            try {
-                String key = node.getIp() + ":" + node.getUdpPort();
-                BondState state = bondStates.get(key);
-
-                if (state == null || !state.isFullyBonded()) {
-                    P2PSender.sendPing(myNode, node.getIp(), node.getUdpPort(), socket);
-                    bondStates.put(key, new BondState(true, false, false, false));
-                }
-
-                state = bondStates.get(key);
-                if (state != null && state.isFullyBonded() && !queriedNodes.contains(key)) {
-                    System.out.println("[Crawl] Sending FIND_NODE to: " + key);
-                    byte[] publicKey = Numeric.hexStringToByteArray(myNode.getNodeId());
-                    FindNodeSender.sendFindNode(myNode, node.getIp(), node.getUdpPort(), socket, publicKey);
-                    queriedNodes.add(key);
-                }
-
-                NodeRecord record = new NodeRecord(
-                        node.getIp(),
-                        node.getUdpPort(),
-                        node.getTcpPort(),
-                        node.nodeIdHex
-                );
-
-                nodeStore.save(record);
-                Thread.sleep(100);
-
-            } catch (Exception e) {
-                System.err.println("[Crawl] Error processing node: " + e.getMessage());
-            }
-        }
-
-        if (currentDepth < maxDepth) {
-            try {
-                Thread.sleep(5000);
-                crawlRecursively(socket, myNode, nodeStore, maxDepth, currentDepth + 1);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-
-
     private void inspectNewNodes(NodeStore nodeStore) {
         try {
             List<NodeRecord> allNodes = nodeStore.findAll();
             List<NodeRecord> toInspect = new ArrayList<>();
 
             for (NodeRecord node : allNodes) {
-                String key = node.getIp() + ":" + node.getUdpPort();
+                String key = node.getKey() + ":tcp=" + node.getP2pEndpoint().port();
                 if (!inspectedNodes.contains(key)) {
                     toInspect.add(node);
                     if (toInspect.size() >= INSPECT_BATCH_SIZE) {
@@ -175,7 +109,7 @@ public class ScanDaemon {
 
             for (NodeRecord node : toInspect) {
                 CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                    String key = node.getIp() + ":" + node.getUdpPort();
+                    String key = node.getKey() + ":tcp=" + node.getP2pEndpoint().port();
                     try {
                         NodeRecord inspected = nodeInspector.inspect(node).get(INSPECT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                         nodeStore.update(inspected);
@@ -198,9 +132,19 @@ public class ScanDaemon {
                         .get(120, TimeUnit.SECONDS);
             } catch (TimeoutException e) {
                 System.err.println("[Inspect] Batch timeout");
+            } finally {
+                executor.shutdownNow();
+                boolean interrupted = false;
+                boolean terminated = false;
+                while (!terminated) {
+                    try {
+                        terminated = executor.awaitTermination(1, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        interrupted = true;
+                    }
+                }
+                if (interrupted) Thread.currentThread().interrupt();
             }
-
-            executor.shutdown();
 
         } catch (Exception e) {
             System.err.println("[Inspect] Error: " + e.getMessage());
@@ -209,10 +153,17 @@ public class ScanDaemon {
 
     public void stop() {
         running = false;
+        if (provider != null) provider.close();
+        if (enrAcquirer != null) enrAcquirer.close();
         if (scanThread != null) {
             scanThread.interrupt();
         }
         System.out.println("[ScanDaemon] Stopped");
+    }
+
+    public void awaitStopped() throws InterruptedException {
+        Thread thread = scanThread;
+        if (thread != null && thread != Thread.currentThread()) thread.join();
     }
 
     public boolean isRunning() {

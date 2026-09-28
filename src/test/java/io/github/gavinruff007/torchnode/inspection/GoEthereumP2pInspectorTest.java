@@ -37,6 +37,19 @@ class GoEthereumP2pInspectorTest {
     }
 
     @Test
+    void helperReceivesDiscoveryTcpEndpointIndependentlyFromUdp() throws Exception {
+        Path helper = temp.resolve("helper");
+        Path request = temp.resolve("request.json");
+        Files.writeString(helper, "#!/bin/sh\ncat > '" + request + "'\nprintf '%s' '{\"tcp\":{\"state\":\"NOT_TESTED\"},\"auth\":{\"state\":\"NOT_TESTED\"},\"hello\":{\"state\":\"NOT_TESTED\"},\"status\":{\"state\":\"NOT_TESTED\"}}'\n");
+        assertTrue(helper.toFile().setExecutable(true));
+        new GoEthereumP2pInspector(helper.toString(), temp, temp).inspect(
+                new NodeRecord("192.0.2.1", 30301, 30305, "ab".repeat(64))).orElseThrow();
+        var sent = new com.fasterxml.jackson.databind.ObjectMapper().readTree(Files.readString(request));
+        assertEquals(30305, sent.path("tcpPort").asInt());
+        assertEquals("ab".repeat(64), sent.path("nodeId").asText());
+    }
+
+    @Test
     void explicitPathWinsAndInvalidExplicitPathDoesNotSilentlyFallBack() throws Exception {
         Path app = Files.createDirectory(temp.resolve("app"));
         Path working = Files.createDirectory(temp.resolve("work"));

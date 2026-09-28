@@ -73,6 +73,11 @@
         input { width:min(420px,100%); } select { min-width:170px; } button,.button { cursor:pointer; background:var(--cyan); border:1px solid var(--cyan); border-radius:9px; color:#061011; font-weight:750; text-decoration:none; height:42px; padding:0 13px; display:inline-flex; align-items:center; }
         .button.secondary,button.secondary { background:#151d2a; border-color:var(--line); color:var(--text); }
         button.danger { background:#2d1920; border-color:#60303c; color:#ff9eaa; }
+        .confirm-dialog { width:min(460px,calc(100% - 32px)); border:1px solid #60303c; border-radius:14px; padding:24px; background:var(--panel); color:var(--text); }
+        .confirm-dialog::backdrop { background:#000b; }
+        .confirm-dialog h2 { margin:0 0 10px; }
+        .confirm-dialog p { color:var(--muted); margin:0 0 22px; }
+        .confirm-actions { display:flex; justify-content:flex-end; gap:10px; }
         button.small { height:30px; padding:0 10px; font-size:12px; }
         .notice { margin:0 0 14px; padding:11px 14px; border:1px solid #28583b; border-radius:9px; background:#10271a; color:var(--green); }
         .notice.error { border-color:#60303c; background:#2d1920; color:#ff9eaa; }
@@ -130,8 +135,21 @@
                 <input type="hidden" name="csrf" value="<%= h(csrfToken) %>">
                 <button class="<%= scannerRunning ? "danger" : "" %>" type="submit"><%= scannerRunning ? "Stop scan" : "Start scan" %></button>
             </form>
+            <button class="danger" type="button" id="open-clear">Clear All Data</button>
         </div>
     </header>
+
+    <dialog class="confirm-dialog" id="clear-dialog" aria-labelledby="clear-title">
+        <h2 id="clear-title">Clear all collected TorchNode data?</h2>
+        <p>This permanently deletes discovered nodes and their stored inspection history and results. This action cannot be undone. The scanner will stop.</p>
+        <form class="action-form" method="post" action="/data/clear" id="clear-form">
+            <input type="hidden" name="csrf" value="<%= h(csrfToken) %>">
+            <div class="confirm-actions">
+                <button class="secondary" type="button" id="cancel-clear">Cancel</button>
+                <button class="danger" type="submit">Clear All Data</button>
+            </div>
+        </form>
+    </dialog>
 
     <% if (message != null) { %><div class="notice"><%= h(message) %></div><% } %>
     <% if (error != null) { %><div class="notice error"><%= h(error) %></div><% } %>
@@ -164,7 +182,7 @@
     <section class="table-wrap">
         <div class="table-head"><span><strong>Node inventory</strong> · <%= "seen_desc".equals(sort) ? "newest first" : "seen_asc".equals(sort) ? "oldest first" : "most detailed first" %> <span class="loading-hint" role="status">Refreshing results…</span></span><span><%= request.getAttribute("resultFrom") %>–<%= request.getAttribute("resultTo") %> of <%= totalResults %></span></div>
         <% if (nodes.isEmpty()) { %>
-            <div class="empty">No matching nodes yet. Use <strong>Start scan</strong> to begin discovery.</div>
+            <div class="empty"><%= Integer.valueOf(0).equals(request.getAttribute("totalNodes")) ? "No nodes discovered yet." : "No matching nodes yet." %> Use <strong>Start scan</strong> to begin discovery.</div>
         <% } else { %>
         <table>
             <thead><tr><th>Discovery endpoint</th><th>Node ID</th><th>Type</th><th>Client</th><th>Services</th><th>Details</th><th>P2P TCP connect</th><th aria-sort="<%= "seen_desc".equals(sort) ? "descending" : "seen_asc".equals(sort) ? "ascending" : "none" %>"><a class="sort-link <%= sort.startsWith("seen_") ? "active" : "" %>" href="<%= pageUrl(query, selectedType, pageSize, 1, "seen_asc".equals(sort) ? "seen_desc" : "seen_asc") %>" aria-label="Sort by Last Seen, <%= "seen_asc".equals(sort) ? "newest first" : "oldest first" %>">Last seen <span class="sort-arrow" aria-hidden="true"><%= "seen_desc".equals(sort) ? "↓" : "seen_asc".equals(sort) ? "↑" : "↕" %></span></a></th><th></th></tr></thead>
@@ -201,6 +219,9 @@
 </main>
 <script>
 const filterForm = document.getElementById('filters');
+const clearDialog = document.getElementById('clear-dialog');
+document.getElementById('open-clear').addEventListener('click', () => clearDialog.showModal());
+document.getElementById('cancel-clear').addEventListener('click', () => clearDialog.close());
 function pending() {
     document.body.classList.add('pending');
     document.querySelector('.table-wrap').setAttribute('aria-busy', 'true');
@@ -220,8 +241,10 @@ document.querySelectorAll('.page-link:not(.disabled),.sort-link').forEach(link =
         requestAnimationFrame(() => location.assign(link.href));
     });
 });
-document.querySelectorAll('.action-form').forEach(form => form.addEventListener('submit', () => {
-    const button = form.querySelector('button');
+document.querySelectorAll('.action-form').forEach(form => form.addEventListener('submit', event => {
+    if (form.dataset.submitting) { event.preventDefault(); return; }
+    form.dataset.submitting = 'true';
+    const button = form.querySelector('button[type="submit"]');
     button.dataset.originalLabel = button.textContent;
     button.disabled = true;
     button.textContent = 'Working…';
@@ -240,9 +263,10 @@ window.addEventListener('pageshow', () => {
         button.disabled = false;
         if (button.dataset.originalLabel) button.textContent = button.dataset.originalLabel;
     });
+    document.querySelectorAll('.action-form').forEach(form => { delete form.dataset.submitting; });
 });
 setInterval(() => {
-    if (document.hidden || document.body.classList.contains('pending') || filterForm.contains(document.activeElement)) return;
+    if (document.hidden || clearDialog.open || document.body.classList.contains('pending') || filterForm.contains(document.activeElement)) return;
     pending(); setTimeout(() => location.reload(), 80);
 }, 30000);
 </script>

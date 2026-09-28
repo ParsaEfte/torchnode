@@ -6,11 +6,11 @@ import org.web3j.utils.Numeric;
 
 import java.math.BigInteger;
 
-public class NodeIdentity {
+public class LocalNodeIdentity {
     private ECKeyPair keyPair;
     private String nodeId;
 
-    public NodeIdentity() throws Exception {
+    public LocalNodeIdentity() throws Exception {
         this.keyPair = Keys.createEcKeyPair();
         BigInteger publicKey = keyPair.getPublicKey();
 

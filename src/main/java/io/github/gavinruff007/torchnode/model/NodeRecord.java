@@ -1,12 +1,15 @@
 package io.github.gavinruff007.torchnode.model;
 
 import java.time.Instant;
+import java.util.List;
 
 public class NodeRecord {
     private String ip;
     private int udpPort;
     private int tcpPort;
     private String nodeId;
+    private String discoverySource = "discv4";
+    private List<DiscoveryObservation> observations = List.of();
     private String country;
     private Long latency;
     private Long p2pConnectMs;
@@ -31,9 +34,37 @@ public class NodeRecord {
     }
     
     public String getKey() {
-        return ip + ":" + udpPort;
+        return identity().available() ? nodeId + "@" + ip + ":" + udpPort : ip + ":" + udpPort;
     }
     
+    public NodeRecord(DiscoveryObservation observation) {
+        this(observation.endpoint(NodeEndpoint.Purpose.DISCOVERY, NodeEndpoint.Transport.UDP).address(),
+                observation.endpoint(NodeEndpoint.Purpose.DISCOVERY, NodeEndpoint.Transport.UDP).port(),
+                observation.endpoint(NodeEndpoint.Purpose.P2P, NodeEndpoint.Transport.TCP).port(),
+                observation.identity().nodeId());
+        this.discoverySource = observation.source();
+        this.lastSeen = observation.observedAt();
+        this.observations = List.of(observation);
+        this.p2pEndpoint = observation.endpoint(NodeEndpoint.Purpose.P2P, NodeEndpoint.Transport.TCP);
+    }
+
+    public NodeIdentity identity() { return new NodeIdentity(nodeId); }
+    public String getDiscoverySource() { return discoverySource; }
+    public void setDiscoverySource(String source) { this.discoverySource = source; }
+    public List<DiscoveryObservation> getObservations() { return observations; }
+    public void setObservations(List<DiscoveryObservation> observations) { this.observations = List.copyOf(observations); }
+    public void selectObservation(DiscoveryObservation observation) {
+        if (!identity().equals(observation.identity())) throw new IllegalArgumentException("Identity mismatch");
+        p2pEndpoint = observation.endpoint(NodeEndpoint.Purpose.P2P, NodeEndpoint.Transport.TCP);
+    }
+    private NodeEndpoint p2pEndpoint;
+    /** Selected discovery claim only; authenticated Hello never mutates it. */
+    public NodeEndpoint getP2pEndpoint() {
+        return p2pEndpoint != null ? p2pEndpoint : new NodeEndpoint(ip, NodeEndpoint.Transport.TCP, tcpPort,
+                ip.contains(":") ? NodeEndpoint.AddressFamily.IPV6 : NodeEndpoint.AddressFamily.IPV4,
+                NodeEndpoint.Purpose.P2P);
+    }
+
     public void updateLastSeen() {
         this.lastSeen = Instant.now();
     }

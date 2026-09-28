@@ -1,6 +1,7 @@
 package io.github.gavinruff007.torchnode.inspection;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.gavinruff007.torchnode.enr.EnrAcquirer;
 import io.github.gavinruff007.torchnode.model.NodeRecord;
 import io.github.gavinruff007.torchnode.model.NodeType;
 import io.github.gavinruff007.torchnode.storage.NodeStore;
@@ -10,6 +11,7 @@ import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,25 +32,44 @@ public class InspectionService implements AutoCloseable {
     private final String databasePath;
     private final RpcProber rpcProber = new RpcProber();
     private final BeaconProber beaconProber = new BeaconProber();
+    private final EnrAcquirer enrAcquirer = new EnrAcquirer();
     private final GoEthereumP2pInspector p2pInspector = new GoEthereumP2pInspector();
     private final ExecutorService executor = Executors.newFixedThreadPool(12);
     private final Map<String, InspectionResult> results = new ConcurrentHashMap<>();
+    private final Object persistenceLock = new Object();
+    private long generation;
 
     public InspectionService(String databasePath) {
         this.databasePath = databasePath;
     }
 
     public String inspect(NodeRecord node) {
-        prune();
-        String id = UUID.randomUUID().toString();
-        InspectionResult result = new InspectionResult(id, node);
-        results.put(id, result);
+        synchronized (persistenceLock) {
+            prune();
+            String id = UUID.randomUUID().toString();
+            InspectionResult result = new InspectionResult(id, node);
+            results.put(id, result);
+            try (SqliteNodeStore store = new SqliteNodeStore(databasePath)) { result.loadEnrEvidence(store.findEnrEvidence(node.identity())); }
+            catch (Exception e) { result.event("Saved ENR evidence unavailable", concise(e)); }
+            CompletableFuture<Void> enr = enrAcquirer.acquire(node).thenAccept(result::setEnrEvidence);
 
-        CompletableFuture<Void> tcp = CompletableFuture.runAsync(() -> inspectP2p(result), executor);
-        CompletableFuture<Void> rpc = CompletableFuture.runAsync(() -> inspectRpc(result), executor);
-        CompletableFuture<Void> beacon = CompletableFuture.runAsync(() -> inspectBeacon(result), executor);
-        CompletableFuture.allOf(tcp, rpc, beacon).whenComplete((ignored, error) -> finish(result, error));
-        return id;
+            CompletableFuture<Void> tcp = CompletableFuture.runAsync(() -> inspectP2p(result), executor);
+            CompletableFuture<Void> rpc = CompletableFuture.runAsync(() -> inspectRpc(result), executor);
+            CompletableFuture<Void> beacon = CompletableFuture.runAsync(() -> inspectBeacon(result), executor);
+            long startedGeneration = generation;
+            CompletableFuture.allOf(tcp, rpc, beacon, enr).whenComplete(
+                    (ignored, error) -> finish(result, error, startedGeneration));
+            return id;
+        }
+    }
+
+    public void clearCollectedData(SqliteNodeStore store) throws SQLException {
+        synchronized (persistenceLock) {
+            store.clearCollectedData();
+            generation++;
+            enrAcquirer.clear();
+            results.clear();
+        }
     }
 
     public Optional<Map<String, Object>> snapshot(String id) {
@@ -58,14 +79,14 @@ public class InspectionService implements AutoCloseable {
 
     private void inspectTcp(InspectionResult result) {
         NodeRecord node = result.node();
-        if (node.getTcpPort() <= 0) {
+        if (node.getP2pEndpoint().port() <= 0) {
             result.diagnostic("P2P TCP", InspectionResult.State.UNAVAILABLE, null,
                     "No TCP port was advertised", "Discovery");
             return;
         }
         long started = System.nanoTime();
         try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(node.getIp(), node.getTcpPort()), CONNECT_TIMEOUT_MS);
+            socket.connect(new InetSocketAddress(node.getP2pEndpoint().address(), node.getP2pEndpoint().port()), CONNECT_TIMEOUT_MS);
             long duration = elapsedMs(started);
             node.setP2pConnectMs(duration);
             result.diagnostic("P2P TCP", InspectionResult.State.PASS, duration, null, "Scanner");
@@ -86,7 +107,7 @@ public class InspectionService implements AutoCloseable {
     }
 
     private void inspectP2p(InspectionResult result) {
-        if (result.node().getTcpPort() <= 0) {
+        if (result.node().getP2pEndpoint().port() <= 0) {
             inspectTcp(result);
             result.diagnostic("RLPx Auth", InspectionResult.State.NOT_TESTED, null,
                     "No advertised P2P TCP endpoint", "NO_TCP_ENDPOINT", "RLPx");
@@ -199,25 +220,30 @@ public class InspectionService implements AutoCloseable {
         result.diagnostic("Beacon API", state, null, reason, "Beacon");
     }
 
-    private void finish(InspectionResult result, Throwable error) {
-        NodeRecord node = result.node();
-        if (node.isRpcAvailable() && node.isBeaconAvailable()) node.setNodeType(NodeType.FULL_NODE);
-        else if (node.isRpcAvailable()) node.setNodeType(NodeType.EXECUTION);
-        else if (node.isBeaconAvailable()) node.setNodeType(NodeType.CONSENSUS);
-        if (error != null) result.event("Inspection partially completed", concise(error));
-        try (NodeStore store = new SqliteNodeStore(databasePath)) {
-            store.update(node);
-            if (store instanceof SqliteNodeStore sqlite && result.p2p() != null &&
-                    (result.p2p().get("hello") != null || result.p2p().get("status") != null)) {
-                Map<String, Object> p2p = result.p2p();
-                sqlite.saveP2pObservation(node.getKey(),
-                        p2p.get("hello") == null ? null : JSON.writeValueAsString(p2p.get("hello")),
-                        p2p.get("status") == null ? null : JSON.writeValueAsString(p2p.get("status")));
+    private void finish(InspectionResult result, Throwable error, long startedGeneration) {
+        synchronized (persistenceLock) {
+            if (startedGeneration != generation) return;
+            NodeRecord node = result.node();
+            if (node.isRpcAvailable() && node.isBeaconAvailable()) node.setNodeType(NodeType.FULL_NODE);
+            else if (node.isRpcAvailable()) node.setNodeType(NodeType.EXECUTION);
+            else if (node.isBeaconAvailable()) node.setNodeType(NodeType.CONSENSUS);
+            if (error != null) result.event("Inspection partially completed", concise(error));
+            try (NodeStore store = new SqliteNodeStore(databasePath)) {
+                store.update(node);
+                if (store instanceof SqliteNodeStore sqlite && result.enrEvidence() != null)
+                    sqlite.saveEnrEvidence(result.enrEvidence());
+                if (store instanceof SqliteNodeStore sqlite && result.p2p() != null &&
+                        (result.p2p().get("hello") != null || result.p2p().get("status") != null)) {
+                    Map<String, Object> p2p = result.p2p();
+                    sqlite.saveP2pObservation(node.getKey(),
+                            p2p.get("hello") == null ? null : JSON.writeValueAsString(p2p.get("hello")),
+                            p2p.get("status") == null ? null : JSON.writeValueAsString(p2p.get("status")));
+                }
+            } catch (Exception e) {
+                result.event("Database update failed", concise(e));
             }
-        } catch (Exception e) {
-            result.event("Database update failed", concise(e));
+            result.complete();
         }
-        result.complete();
     }
 
     private Map<String, Object> rpcMap(RpcProber.RpcInfo info, String ip) {
@@ -288,5 +314,5 @@ public class InspectionService implements AutoCloseable {
     }
 
     @Override
-    public void close() { executor.shutdownNow(); }
+    public void close() { executor.shutdownNow(); enrAcquirer.close(); }
 }
