@@ -1,5 +1,7 @@
 package io.github.gavinruff007.torchnode.inspection;
 
+import io.github.gavinruff007.torchnode.model.EndpointAddress;
+
 import io.github.gavinruff007.torchnode.model.NodeRecord;
 import io.github.gavinruff007.torchnode.enr.EnrEvidence;
 
@@ -22,6 +24,7 @@ public class InspectionResult {
     private Map<String, Object> p2p;
     private List<String> rpcProbeEndpoints = List.of();
     private List<String> beaconProbeEndpoints = List.of();
+    private final List<Map<String,Object>> endpointAttempts = new ArrayList<>();
     private boolean complete;
     private EnrEvidence enrEvidence;
     private final List<EnrEvidence> enrHistory = new ArrayList<>();
@@ -40,7 +43,7 @@ public class InspectionResult {
         diagnostic("JSON-RPC", State.CHECKING, null, null, "RPC");
         diagnostic("Beacon API", State.CHECKING, null, null, "Beacon");
         diagnostic("ENR", State.CHECKING, null, null, "ENR");
-        event("Inspection started", node.getIp() + ":" + node.getTcpPort());
+        event("Inspection started", EndpointAddress.hostPort(node.getIp(), node.getTcpPort()));
     }
 
     public synchronized void diagnostic(String name, State state, Long durationMs,
@@ -57,6 +60,10 @@ public class InspectionResult {
         value.put("reason", reason);
         value.put("reasonCode", reasonCode);
         value.put("source", source);
+        if (List.of("P2P TCP", "RLPx Auth", "RLPx Hello", "ETH Status").contains(name)) {
+            value.put("endpoint", node.getP2pEndpoint().hostPort());
+            value.put("addressFamily", node.getP2pEndpoint().addressFamily().name());
+        }
         diagnostics.put(name, value);
     }
 
@@ -81,7 +88,7 @@ public class InspectionResult {
                 : evidence.outcome().endsWith("TIMEOUT") ? State.TIMEOUT : State.UNAVAILABLE;
         diagnostic("ENR", state, null, evidence.detail(), evidence.outcome(), "ENR");
     }
-    private EnrEvidence selectedEnr() {
+    public synchronized EnrEvidence selectedEnr() {
         return EnrEvidence.latestValidated(enrHistory).orElse(enrEvidence);
     }
     private Map<String, Object> enrComparisons(EnrEvidence selected) {
@@ -121,6 +128,8 @@ public class InspectionResult {
             value.put("observedAt", o.observedAt().toString()); value.put("endpoints", o.endpoints());
             value.put("provenance", o.provenance()); return value;
         }).toList());
+        root.put("endpointAttempts", new ArrayList<>(endpointAttempts));
+        root.put("endpointObservations", node.getObservations().stream().map(io.github.gavinruff007.torchnode.model.DiscoveryObservation::toMap).toList());
         root.put("client", clientMap());
         root.put("nodeStack", nodeStack());
         root.put("rpc", rpc);
@@ -139,6 +148,36 @@ public class InspectionResult {
         return root;
     }
 
+    public synchronized void endpointAttempt(io.github.gavinruff007.torchnode.model.NodeEndpoint endpoint) {
+        Map<String,Object> attempt = new LinkedHashMap<>();
+        attempt.put("endpoint", endpoint.hostPort()); attempt.put("addressFamily", endpoint.addressFamily().name());
+        attempt.put("transport", endpoint.transport().name()); attempt.put("port", endpoint.port());
+        attempt.put("observedAt", Instant.now().toString());
+        attempt.put("provenance", node.getObservations().stream().filter(o -> o.endpoints().contains(endpoint))
+            .map(o -> o.source() + ": " + o.provenance()).distinct().toList());
+        attempt.put("diagnostics", new ArrayList<>(diagnostics.values()).stream()
+            .filter(d -> List.of("P2P TCP", "RLPx Auth", "RLPx Hello", "ETH Status").contains(d.get("name"))).toList());
+        attempt.put("p2p", p2p);
+        endpointAttempts.add(attempt);
+    }
+    public synchronized List<Map<String,Object>> endpointAttempts() { return List.copyOf(endpointAttempts); }
+    public synchronized void resetP2p() {
+        p2p = null;
+        for (String name : List.of("RLPx Auth", "RLPx Hello", "ETH Status"))
+            diagnostic(name, State.NOT_TESTED, null, "Prerequisite has not completed for this endpoint", "Scanner");
+    }
+    @SuppressWarnings("unchecked")
+    public synchronized void summarizeEndpointAttempts() {
+        var best = endpointAttempts.stream().max(java.util.Comparator.comparingInt(a -> {
+            var stages = (List<Map<String,Object>>)a.get("diagnostics");
+            return (int)stages.stream().filter(d -> "PASS".equals(d.get("state"))).count();
+        })).orElse(null);
+        if (best == null) return;
+        for (var stage : (List<Map<String,Object>>)best.get("diagnostics")) diagnostics.put((String)stage.get("name"), stage);
+        p2p = (Map<String,Object>)best.get("p2p");
+        var tcp = diagnostics.get("P2P TCP");
+        if ("PASS".equals(tcp.get("state"))) node.setP2pConnectMs((Long)tcp.get("durationMs"));
+    }
     public NodeRecord node() { return node; }
     public synchronized Map<String, Object> p2p() { return p2p; }
 
@@ -183,11 +222,12 @@ public class InspectionResult {
         value.put("nodeId", node.getNodeId().isBlank() ? null : "0x" + node.getNodeId());
         value.put("enode", enodeUrl());
         value.put("discovery", node.getDiscoverySource());
-        value.put("discoveryEndpoint", node.getIp() + ":" + node.getUdpPort());
-        value.put("p2pEndpoint", node.getTcpPort() > 0 ? node.getIp() + ":" + node.getTcpPort() : null);
+        value.put("discoveryEndpoint", EndpointAddress.hostPort(node.getIp(), node.getUdpPort()));
+        value.put("p2pEndpoint", diagnostics.get("P2P TCP").get("endpoint"));
+        value.put("addressFamily", diagnostics.get("P2P TCP").get("addressFamily"));
         value.put("rpcEndpoint", rpc == null ? null : rpc.get("endpoint"));
         value.put("beaconEndpoint", beacon == null ? null
-                : "http://" + node.getIp() + ":" + beacon.get("port"));
+                : beacon.getOrDefault("endpoint", EndpointAddress.http(node.getIp(), ((Number)beacon.get("port")).intValue())));
         value.put("country", node.getCountry());
         value.put("nodeType", node.getNodeType().name());
         value.put("lastSeen", node.getLastSeen() == null ? null : node.getLastSeen().toString());
@@ -200,7 +240,7 @@ public class InspectionResult {
     private String enodeUrl() {
         String id = node.getNodeId();
         if (id == null || !id.matches("(?i)[0-9a-f]{128}") || node.getTcpPort() <= 0) return null;
-        String url = "enode://" + id + "@" + node.getIp() + ":" + node.getTcpPort();
+        String url = "enode://" + id + "@" + EndpointAddress.hostPort(node.getIp(), node.getTcpPort());
         return node.getUdpPort() > 0 && node.getUdpPort() != node.getTcpPort()
                 ? url + "?discport=" + node.getUdpPort() : url;
     }

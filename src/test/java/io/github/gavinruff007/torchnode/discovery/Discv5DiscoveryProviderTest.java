@@ -15,11 +15,11 @@ class Discv5DiscoveryProviderTest {
  private com.fasterxml.jackson.databind.JsonNode event(byte[] raw,String id,String time) {
   return new ObjectMapper().valueToTree(Map.of("type","node","rlp",HexFormat.of().formatHex(raw),"nodeId",id,"at",time,"authenticated",false,"provenance","discv5 NODES fixture"));
  }
- @Test void rawEnrIsRevalidatedAndProvenanceSurvivesPersistenceWithoutSelectingIpv6() throws Exception {
+ @Test void rawEnrIsRevalidatedAndProvenanceSurvivesPersistenceWithBothFamilies() throws Exception {
   var provider=provider();String at="2026-09-28T00:00:00.123456789Z";byte[] raw=EnrFixtures.complete(7,30303);
   provider.accept(event(raw,EnrFixtures.ID.nodeId(),at));var observations=provider.discover();assertEquals(1,observations.size());
   var observation=observations.get(0);assertEquals("discv5",observation.source());assertEquals(Instant.parse(at),observation.observedAt());
-  assertTrue(observation.endpoints().stream().allMatch(e->e.addressFamily()==NodeEndpoint.AddressFamily.IPV4));assertEquals(30303,new NodeRecord(observation).getP2pEndpoint().port());
+  assertEquals(Set.of(NodeEndpoint.AddressFamily.IPV4,NodeEndpoint.AddressFamily.IPV6), observation.endpoints().stream().map(NodeEndpoint::addressFamily).collect(java.util.stream.Collectors.toSet()));assertEquals(30303,new NodeRecord(observation).getP2pEndpoint().port());
   assertTrue(observation.provenance().contains("acquired via DISCV5"));
   List<EnrEvidence> evidence=new ArrayList<>();provider.drainEnrEvidence(evidence::add);var enr=evidence.get(0);
   assertTrue(enr.usable());assertEquals(HexFormat.of().formatHex(raw),enr.rawRlpHex());assertNotNull(enr.record().fields().ip6());

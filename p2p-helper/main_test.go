@@ -32,9 +32,12 @@ func key(t *testing.T) *ecdsa.PrivateKey {
 }
 
 func fixture(t *testing.T, serve func(net.Conn, *ecdsa.PrivateKey) error) (request, <-chan error) {
+	return fixtureAt(t, "127.0.0.1", serve)
+}
+func fixtureAt(t *testing.T, host string, serve func(net.Conn, *ecdsa.PrivateKey) error) (request, <-chan error) {
 	t.Helper()
 	private := key(t)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", net.JoinHostPort(host, "0"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +54,7 @@ func fixture(t *testing.T, serve func(net.Conn, *ecdsa.PrivateKey) error) (reque
 		done <- serve(conn, private)
 	}()
 	port := listener.Addr().(*net.TCPAddr).Port
-	return request{IP: "127.0.0.1", TCPPort: port,
+	return request{IP: host, TCPPort: port,
 		NodeID: hex.EncodeToString(crypto.FromECDSAPub(&private.PublicKey)[1:])}, done
 }
 
@@ -94,6 +97,11 @@ func serverHello(conn net.Conn, private *ecdsa.PrivateKey, caps []p2p.Cap) (*rlp
 }
 
 func TestAuthenticatedHelloAndETHStatus(t *testing.T) {
+	for _, host := range []string{"127.0.0.1", "::1"} {
+		t.Run(host, func(t *testing.T) { authenticatedHelloAndETHStatus(t, host) })
+	}
+}
+func authenticatedHelloAndETHStatus(t *testing.T, host string) {
 	old := localStatusProvider
 	localStatusProvider = func(context.Context, uint) (any, string) {
 		return &eth.StatusPacket{ProtocolVersion: 69, NetworkID: 560048,
@@ -101,7 +109,7 @@ func TestAuthenticatedHelloAndETHStatus(t *testing.T) {
 			LatestBlock: 100, LatestBlockHash: common.HexToHash("0x01")}, ""
 	}
 	t.Cleanup(func() { localStatusProvider = old })
-	input, done := fixture(t, func(conn net.Conn, private *ecdsa.PrivateKey) error {
+	input, done := fixtureAt(t, host, func(conn net.Conn, private *ecdsa.PrivateKey) error {
 		transport, err := serverHello(conn, private, []p2p.Cap{{Name: "eth", Version: 68},
 			{Name: "eth", Version: 69}, {Name: "snap", Version: 1}})
 		if err != nil {
@@ -565,5 +573,16 @@ func TestLocalStatusRequiresExplicitTrustedRPC(t *testing.T) {
 	t.Setenv("TORCHNODE_P2P_STATUS_RPC_URL", "file:///tmp/untrusted")
 	if _, reason := loadLocalStatus(context.Background(), 69); reason != "LOCAL_STATUS_RPC_INVALID_URL" {
 		t.Fatalf("invalid RPC URL: %s", reason)
+	}
+}
+
+func TestObserverNetworkFailureDiagnostics(t *testing.T) {
+	for cause, expected := range map[error]string{
+		syscall.ENETUNREACH: "TCP_NETWORK_UNREACHABLE", syscall.EHOSTUNREACH: "TCP_NO_ROUTE_TO_HOST",
+		syscall.EAFNOSUPPORT: "TCP_ADDRESS_FAMILY_UNAVAILABLE", syscall.EADDRNOTAVAIL: "TCP_LOCAL_ADDRESS_UNAVAILABLE",
+	} {
+		if got := classifyTCP(&net.OpError{Op: "dial", Net: "tcp6", Err: cause}); got != expected {
+			t.Fatalf("%s != %s", got, expected)
+		}
 	}
 }

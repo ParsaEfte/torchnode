@@ -69,10 +69,13 @@ class Discv4EnrClientTest {
             assertNotSame(first, acquirer.acquire(peer.node()));
         }
     }
-    @Test void ipv6EvidenceDoesNotTriggerAcquisition() {
-        try (var client = new Discv4EnrClient()) {
-            var node = new io.github.gavinruff007.torchnode.model.NodeRecord("2001:db8::1", 30303, 30303, EnrFixtures.ID.nodeId());
-            assertEquals("NO_DISCOVERY_ENDPOINT", client.fetch(node).outcome());
+    @Test void ipv6AuthenticatedExchangePreservesTrustAndEndpointProof() throws Exception {
+        try (var peer = new LoopbackEnrPeer(LoopbackEnrPeer.Mode.MISLEADING_THEN_VALID, "::1");
+             var client = new Discv4EnrClient(EnrFixtures.KEY, Duration.ofSeconds(2))) {
+            var evidence = client.fetch(peer.node());
+            assertTrue(evidence.usable(), evidence.outcome() + ": " + evidence.detail());
+            assertTrue(evidence.provenance().contains("[0:0:0:0:0:0:0:1]:"));
+            assertEquals(1, peer.requests.get());
         }
     }
     @Test void boundedQueueRejectsExcessWorkAndCloseCompletesAllPendingIdentities() throws Exception {

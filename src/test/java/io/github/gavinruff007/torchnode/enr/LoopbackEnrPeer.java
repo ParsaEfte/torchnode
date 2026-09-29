@@ -19,10 +19,13 @@ public final class LoopbackEnrPeer implements AutoCloseable {
     public final AtomicInteger requests = new AtomicInteger();
     private volatile Throwable failure;
     public LoopbackEnrPeer(Mode mode) throws Exception {
-        this.mode = mode; socket = new DatagramSocket(new InetSocketAddress("127.0.0.1", 0));
+        this(mode, "127.0.0.1");
+    }
+    public LoopbackEnrPeer(Mode mode, String ip) throws Exception {
+        this.mode = mode; socket = new DatagramSocket(new InetSocketAddress(ip, 0));
         thread = new Thread(this::run, "loopback-enr-peer"); thread.setDaemon(true); thread.start();
     }
-    public NodeRecord node() { return new NodeRecord("127.0.0.1", socket.getLocalPort(), 30305, EnrFixtures.ID.nodeId()); }
+    public NodeRecord node() { return new NodeRecord(socket.getLocalAddress().getHostAddress(), socket.getLocalPort(), 30305, EnrFixtures.ID.nodeId()); }
     private void run() {
         byte[] expectedPong = null;
         boolean bonded = false;

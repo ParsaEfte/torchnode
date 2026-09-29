@@ -472,6 +472,18 @@ func deadline(ctx context.Context, timeout time.Duration) time.Time {
 }
 
 func classifyTCP(err error) string {
+	if errors.Is(err, syscall.ENETUNREACH) {
+		return "TCP_NETWORK_UNREACHABLE"
+	}
+	if errors.Is(err, syscall.EHOSTUNREACH) {
+		return "TCP_NO_ROUTE_TO_HOST"
+	}
+	if errors.Is(err, syscall.EAFNOSUPPORT) {
+		return "TCP_ADDRESS_FAMILY_UNAVAILABLE"
+	}
+	if errors.Is(err, syscall.EADDRNOTAVAIL) {
+		return "TCP_LOCAL_ADDRESS_UNAVAILABLE"
+	}
 	var op *net.OpError
 	if errors.As(err, &op) && op.Timeout() {
 		return "TCP_TIMEOUT"

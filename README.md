@@ -9,8 +9,9 @@ source, provenance and timestamps are retained in SQLite. See the
 
 TorchNode acquires and validates real ENRs over discv4 and discv5, preserving raw records,
 sequence, unknown fields and advertised endpoints independently of discovery
-and P2P evidence. IPv6 ENR fields are parsed/stored/displayed only; IPv6 probing
-is not enabled. See [ENR support](docs/adr/enr-support.md).
+and P2P evidence. Trusted IPv4 and IPv6 endpoints support active discovery and
+inspection. See [ENR support](docs/adr/enr-support.md) and
+[Active IPv6 support](docs/adr/active-ipv6-support.md).
 
 discv5 uses the pinned geth discovery engine through a separate helper. Build it
 before scanning with both providers:
@@ -25,7 +26,10 @@ Set `TORCHNODE_DISCV5_HELPER` to override its path and
 `TORCHNODE_DISCV5_BOOTSTRAPS` to an ENR configuration file. Missing or failed
 helpers leave discv4 available. Observatory counts cryptographic identities;
 endpoint observations remain preserved. See [discv5 architecture](docs/adr/discv5-support.md).
-IPv6 ENR fields remain passive; IPv6 transport and NAT detection are not enabled.
+Both endpoint families retain their provenance under one cryptographic identity.
+IPv6 discovery, TCP/RLPx, and HTTP transport have deterministic loopback coverage;
+public IPv6 success depends on observer connectivity. See the
+[IPv6 validation report](docs/validation/active-ipv6-support.md).
 
 ## Build and run
 

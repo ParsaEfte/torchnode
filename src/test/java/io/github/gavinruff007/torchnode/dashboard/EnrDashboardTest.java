@@ -19,17 +19,22 @@ class EnrDashboardTest {
         String path=temp.resolve("dashboard.db").toString();
         try(var peer=new LoopbackEnrPeer(LoopbackEnrPeer.Mode.VALID)) {
             var node=peer.node();node.setTcpPort(0);
-            try(var store=new SqliteNodeStore(path)){store.save(node);}
+            try(var store=new SqliteNodeStore(path)){
+                store.save(node);
+                var ipv6 = new io.github.gavinruff007.torchnode.model.NodeRecord("2001:db8::42", 30301, 0, "cd".repeat(64));
+                ipv6.setDiscoverySource("discv5"); store.save(ipv6);
+            }
             var server=new DashboardServer(port,path);server.start();
             try {
                 var cookies=new CookieManager();cookies.setCookiePolicy(CookiePolicy.ACCEPT_ALL);
                 var http=HttpClient.newBuilder().cookieHandler(cookies).followRedirects(HttpClient.Redirect.NORMAL).build();
                 String root="http://127.0.0.1:"+port;
                 String dashboard=http.send(HttpRequest.newBuilder(URI.create(root+"/")).build(),HttpResponse.BodyHandlers.ofString()).body();
+                assertTrue(dashboard.contains("[2001:db8::42]:30301"));
                 var token=java.util.regex.Pattern.compile("name=\"csrf\" value=\"([^\"]+)\"").matcher(dashboard);assertTrue(token.find());
                 String csrf=token.group(1);
                 var page=http.send(HttpRequest.newBuilder(URI.create(root+"/node?key="+URLEncoder.encode(node.getKey(),java.nio.charset.StandardCharsets.UTF_8))).build(),HttpResponse.BodyHandlers.ofString());
-                assertEquals(200,page.statusCode());assertTrue(page.body().contains("Advertised IPv6 (passive)"));
+                assertEquals(200,page.statusCode());assertTrue(page.body().contains("Advertised IPv6"));
                 var match=java.util.regex.Pattern.compile("const inspectionId = '([^']+)' ".trim()).matcher(page.body());assertTrue(match.find());
                 String id=match.group(1);var json=new ObjectMapper();com.fasterxml.jackson.databind.JsonNode snapshot=null;
                 long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(12);
@@ -44,6 +49,7 @@ class EnrDashboardTest {
                 assertEquals("MISMATCH",snapshot.at("/enrComparisons/TCP vs discovery").asText());
                 try(var store=new SqliteNodeStore(path)){assertEquals(1,store.findEnrEvidence(node.identity()).size());}
                 String csv=http.send(HttpRequest.newBuilder(URI.create(root+"/export.csv")).build(),HttpResponse.BodyHandlers.ofString()).body();
+                assertTrue(csv.contains("ENDPOINT_OBSERVATIONS_JSON"));assertTrue(csv.contains("IPV6"));assertTrue(csv.contains("2001:db8:0:0:0:0:0:42"));
                 assertTrue(csv.contains("ENR_SEQUENCE"));assertTrue(csv.contains(snapshot.at("/enr/record/text").asText()));
                 var request=HttpRequest.newBuilder(URI.create(root+"/data/clear")).header("Content-Type","application/x-www-form-urlencoded")
                         .POST(HttpRequest.BodyPublishers.ofString("csrf="+URLEncoder.encode(csrf,java.nio.charset.StandardCharsets.UTF_8))).build();

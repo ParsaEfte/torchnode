@@ -1,5 +1,7 @@
 package io.github.gavinruff007.torchnode.discovery;
 
+import io.github.gavinruff007.torchnode.model.EndpointAddress;
+
 public class DiscoveredNode {
     public final String ip;
 
@@ -34,7 +36,7 @@ public class DiscoveredNode {
     }
 
     public String getKey() {
-        return nodeIdHex + "@" + ip + ":" + udpPort + ":" + tcpPort;
+        return nodeIdHex + "@" + EndpointAddress.hostPort(ip, udpPort) + ":" + tcpPort;
     }
 
     @Override

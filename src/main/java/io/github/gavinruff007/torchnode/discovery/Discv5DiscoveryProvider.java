@@ -22,6 +22,7 @@ public final class Discv5DiscoveryProvider implements DiscoveryProvider {
     private final ArrayBlockingQueue<Received> observations = new ArrayBlockingQueue<>(512);
     private final ArrayBlockingQueue<EnrEvidence> evidence = new ArrayBlockingQueue<>(1024);
     private final ArrayDeque<String> diagnostics = new ArrayDeque<>();
+    private final Map<String,Long> transportCounts = new LinkedHashMap<>();
     private volatile boolean running;
     private volatile long lastEvent;
     private Process process;
@@ -70,6 +71,13 @@ public final class Discv5DiscoveryProvider implements DiscoveryProvider {
     }
     void accept(JsonNode event) throws InterruptedException {
         lastEvent = System.nanoTime();
+        String code = event.path("code").asText();
+        if (Set.of("ENDPOINT_ATTEMPT", "ENDPOINT_SUCCESS", "ENDPOINT_FAILURE").contains(code)) {
+            String family = event.path("addressFamily").asText();
+            if (Set.of("IPV4", "IPV6").contains(family)) synchronized (this) {
+                transportCounts.merge(family + "_" + code, 1L, Long::sum);
+            }
+        }
         if (event.path("type").asText().equals("ready") && !event.path("nodeId").asText().equals(identity.getNodeId()))
             throw new IllegalStateException("Helper local identity differs from shared discovery identity");
         if (!event.path("type").asText().equals("node")) {
@@ -84,16 +92,17 @@ public final class Discv5DiscoveryProvider implements DiscoveryProvider {
             EnrEvidence decoded = new EnrDecoder().decode(HexFormat.of().parseHex(raw), expected,
                     Instant.parse(event.path("at").asText()), provenance);
             if (!decoded.usable()) { evidence.put(decoded); diagnose(decoded.outcome()); return; }
-            // Only advertised IPv4 endpoints enter the scanner projection. IPv6 remains in the ENR evidence.
-            var endpoints = decoded.record().endpoints().stream().filter(e -> e.addressFamily() == NodeEndpoint.AddressFamily.IPV4).toList();
+            // Only Java-validated ENR endpoint claims enter the scanner projection, in both families.
+            var endpoints = decoded.record().endpoints();
             if (endpoints.stream().noneMatch(e -> e.purpose() == NodeEndpoint.Purpose.DISCOVERY && e.port() > 0)) {
-                evidence.put(decoded); diagnose("NO_IPV4_DISCOVERY_ENDPOINT"); return;
+                evidence.put(decoded); diagnose("NO_DISCOVERY_ENDPOINT"); return;
             }
             observations.put(new Received(new DiscoveryObservation(expected, protocol(), endpoints, decoded.observedAt(), provenance), decoded));
         } catch (IllegalArgumentException e) { diagnose("MALFORMED_HELPER_EVENT"); }
     }
     private synchronized void diagnose(String text) { if (diagnostics.size() == 64) diagnostics.removeFirst(); diagnostics.addLast(text); }
     public synchronized List<String> diagnostics() { return List.copyOf(diagnostics); }
+    public synchronized Map<String,Long> transportCounts() { return Map.copyOf(transportCounts); }
     @Override public void discover(Consumer<DiscoveryObservation> observer) {
         if (running && System.nanoTime() - lastEvent > TimeUnit.MINUTES.toNanos(2)) {
             diagnose("HELPER_IDLE_TIMEOUT"); close();

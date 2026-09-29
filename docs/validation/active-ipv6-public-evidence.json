@@ -1,0 +1,702 @@
+{
+  "twoProviderRun": {
+    "startedAt": "2026-09-29T11:50:23.802520Z",
+    "historicalRowsRead": 2943,
+    "historicalCanonicalIdentities": 2842,
+    "historicalPublicIpv6Enrs": [
+      "enr:-Ky4QJZC7EaO1zX9ILcHiRyeLT1QM0zRyiukjWIut1lzn1D6bLMgvIVoRDG3YEYLuaHnrOQtZs2qQAmKhhGU8_QE3PcCg2V0aMfGhCaJVraAgmlkgnY0gmlwhAAAAACDaXA2kCABQdACTAYAAAAAAAAAAACJc2VjcDI1NmsxoQP2O7sX0oLapRXUFZ40V-sTXTXScxZ_xIm-X4LjtBkvioN0Y3CCdl-DdWRwgnZf",
+      "enr:-Ky4QBIgk83HPdNRHTN0LFTh8ScxT7EKVo-95VNXABchMsZJbMowcDDHjPjXZBz_5k5o3B810VHHM7_xPyiAruoYRQEIg2V0aMfGhAfJRi6AgmlkgnY0gmlwhECCLIyDaXA2kCYH_cAHgQADAAAAAQAAADeJc2VjcDI1NmsxoQLa-e7BphdP62slNUkrIIwKnyh6UXaUHCvEWomIqA-X8IN0Y3CCdl-DdWRwgnZf"
+    ],
+    "observerIpv6InternetCheck": "NoRouteToHostException: No route to host",
+    "scannerRuns": [
+      {
+        "durationSeconds": 45,
+        "runningBeforeStop": true,
+        "stopMs": 714,
+        "peakScannerWorkers": 10,
+        "peakHttpCalls": 5,
+        "capturedExecutors": 2,
+        "executorsTerminated": true,
+        "queuedTasksAfterStop": 0,
+        "activeTasksAfterStop": 0,
+        "workersAfterStop": 0,
+        "tcpSocketsAfterStop": 0,
+        "httpCallsAfterStop": 0,
+        "noLateDatabaseMutation": true,
+        "transportCounts": {
+          "IPV6_ENDPOINT_FAILURE": 1,
+          "IPV6_ENDPOINT_ATTEMPT": 1,
+          "IPV4_ENDPOINT_FAILURE": 37,
+          "IPV4_ENDPOINT_SUCCESS": 14,
+          "IPV4_ENDPOINT_ATTEMPT": 52
+        },
+        "diagnostics": [
+          "ENDPOINT_FAILURE: 159.223.14.157:55244 RPC timeout",
+          "ENDPOINT_ATTEMPT: 216.173.115.136:9100 ",
+          "ENDPOINT_FAILURE: 216.173.115.136:9100 RPC timeout",
+          "ENDPOINT_ATTEMPT: 82.69.48.157:30303 ",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=216.173.115.136:9100 err=no matching call",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=8295b4fd056abc729ba7a6c8e1eb9c5cd843da7575f955c1e0f42ce3da68aa6d addr=88.198.20.146:30303",
+          "ENDPOINT_FAILURE: 82.69.48.157:30303 RPC timeout",
+          "ENDPOINT_ATTEMPT: 34.158.159.115:9003 ",
+          "ENDPOINT_FAILURE: 34.158.159.115:9003 RPC timeout",
+          "ENDPOINT_ATTEMPT: 183.89.11.136:30303 ",
+          "ENDPOINT_FAILURE: 183.89.11.136:30303 RPC timeout",
+          "ENDPOINT_ATTEMPT: 150.228.3.74:27333 ",
+          "ENDPOINT_FAILURE: 150.228.3.74:27333 RPC timeout",
+          "ENDPOINT_ATTEMPT: 57.128.72.31:30303 ",
+          "ENDPOINT_FAILURE: 57.128.72.31:30303 RPC timeout",
+          "ENDPOINT_ATTEMPT: 15.204.221.14:30303 ",
+          "ENDPOINT_FAILURE: 15.204.221.14:30303 RPC timeout",
+          "ENDPOINT_ATTEMPT: 90.185.173.122:30404 ",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=15.204.221.14:30303 err=no matching call",
+          "ENDPOINT_FAILURE: 90.185.173.122:30404 RPC timeout",
+          "ENDPOINT_ATTEMPT: 209.249.216.159:9001 ",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=90.185.173.122:30404 err=no matching call",
+          "ENDPOINT_FAILURE: 209.249.216.159:9001 RPC timeout",
+          "ENDPOINT_ATTEMPT: [2001:438:8000:101:8888:8888:24:53]:9001 ",
+          "ENDPOINT_FAILURE: [2001:438:8000:101:8888:8888:24:53]:9001 write udp6 [::]:62033->[2001:438:8000:101:8888:8888:24:53]:9001: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: 40.160.64.23:30303 ",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=823d5f22cd1a87a1c719a680135857d467e5a9dd165b158e0fe3461975fe29ce addr=23.233.75.214:9000",
+          "ENDPOINT_FAILURE: 40.160.64.23:30303 RPC timeout",
+          "ENDPOINT_ATTEMPT: 109.202.209.116:9000 ",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=40.160.64.23:30303 err=no matching call",
+          "CORRELATION_FAILURE: Unsolicited/late PONG/v5 response id=8405bf94b51709ca72cc2881b5bafcffabc556810e34dbb28d3010c2f4163e71 addr=18.143.137.28:30303",
+          "CORRELATION_FAILURE: Unsolicited/late PONG/v5 response id=823d5f22cd1a87a1c719a680135857d467e5a9dd165b158e0fe3461975fe29ce addr=23.233.75.214:9000",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=2756a5b6b5c585cde52e50495817323160a25dad571c53f9aed355938eb518a6 addr=109.202.209.116:9000",
+          "ENDPOINT_SUCCESS: 109.202.209.116:9000 authenticated PING/PONG",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=2756a5b6b5c585cde52e50495817323160a25dad571c53f9aed355938eb518a6 addr=109.202.209.116:9000",
+          "NODES_RECEIVED: << NODES/v5 id=2756a5b6b5c585cde52e50495817323160a25dad571c53f9aed355938eb518a6 addr=109.202.209.116:9000 n=1",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=2756a5b6b5c585cde52e50495817323160a25dad571c53f9aed355938eb518a6 addr=109.202.209.116:9000",
+          "NODES_RECEIVED: << NODES/v5 id=2756a5b6b5c585cde52e50495817323160a25dad571c53f9aed355938eb518a6 addr=109.202.209.116:9000 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=2756a5b6b5c585cde52e50495817323160a25dad571c53f9aed355938eb518a6 addr=109.202.209.116:9000 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=2756a5b6b5c585cde52e50495817323160a25dad571c53f9aed355938eb518a6 addr=109.202.209.116:9000 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=2756a5b6b5c585cde52e50495817323160a25dad571c53f9aed355938eb518a6 addr=109.202.209.116:9000 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=2756a5b6b5c585cde52e50495817323160a25dad571c53f9aed355938eb518a6 addr=109.202.209.116:9000 n=1",
+          "NODES_RECEIVED: << NODES/v5 id=2756a5b6b5c585cde52e50495817323160a25dad571c53f9aed355938eb518a6 addr=109.202.209.116:9000 n=3",
+          "INVALID_ETH_ENTRY",
+          "ENDPOINT_ATTEMPT: 81.217.233.235:30330 ",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=2715a4a370791cf244695d0719ac6b59f9528dad7e2cca50fe58abde3053df38 addr=81.217.233.235:30330",
+          "ENDPOINT_SUCCESS: 81.217.233.235:30330 authenticated PING/PONG",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=2715a4a370791cf244695d0719ac6b59f9528dad7e2cca50fe58abde3053df38 addr=81.217.233.235:30330",
+          "ENR_REQUEST_FAILURE: 81.217.233.235:30330 RPC timeout",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=2715a4a370791cf244695d0719ac6b59f9528dad7e2cca50fe58abde3053df38 addr=81.217.233.235:30330",
+          "NODES_RECEIVED: << NODES/v5 id=2715a4a370791cf244695d0719ac6b59f9528dad7e2cca50fe58abde3053df38 addr=81.217.233.235:30330 n=1",
+          "CORRELATION_FAILURE: Unsolicited/late NODES/v5 response id=2715a4a370791cf244695d0719ac6b59f9528dad7e2cca50fe58abde3053df38 addr=81.217.233.235:30330",
+          "NODES_RECEIVED: << NODES/v5 id=2715a4a370791cf244695d0719ac6b59f9528dad7e2cca50fe58abde3053df38 addr=81.217.233.235:30330 n=5",
+          "NODES_RECEIVED: << NODES/v5 id=2715a4a370791cf244695d0719ac6b59f9528dad7e2cca50fe58abde3053df38 addr=81.217.233.235:30330 n=5",
+          "NODES_RECEIVED: << NODES/v5 id=2715a4a370791cf244695d0719ac6b59f9528dad7e2cca50fe58abde3053df38 addr=81.217.233.235:30330 n=5",
+          "NODES_RECEIVED: << NODES/v5 id=2715a4a370791cf244695d0719ac6b59f9528dad7e2cca50fe58abde3053df38 addr=81.217.233.235:30330 n=1",
+          "INVALID_ETH_ENTRY",
+          "ENDPOINT_ATTEMPT: 77.105.61.245:30342 ",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=67.209.54.122:30379 err=no matching call",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=272121516149659d418fea42c733f489ed59459daabb99c707adc5c0ef92c500 addr=77.105.61.245:30342",
+          "CORRELATION_FAILURE: Unsolicited/late PONG/v5 response id=864ff527ffe3c6a7720f841b9af708b9a71f9ff74a80223f7540637cb2045195 addr=144.76.17.55:30300",
+          "ENDPOINT_FAILURE: 77.105.61.245:30342 RPC timeout",
+          "ENDPOINT_ATTEMPT: 80.64.208.23:30301 ",
+          "CORRELATION_FAILURE: Unsolicited/late PONG/v5 response id=272121516149659d418fea42c733f489ed59459daabb99c707adc5c0ef92c500 addr=77.105.61.245:30342"
+        ],
+        "runningAfterStop": false,
+        "childProcessesAfterStop": 0,
+        "discv4SocketReleased": true,
+        "discoveryThreadsAfterStop": [],
+        "backgroundInspectionThreadsAfterStop": []
+      },
+      {
+        "durationSeconds": 12,
+        "runningBeforeStop": true,
+        "stopMs": 12,
+        "peakScannerWorkers": 10,
+        "peakHttpCalls": 10,
+        "capturedExecutors": 1,
+        "executorsTerminated": true,
+        "queuedTasksAfterStop": 0,
+        "activeTasksAfterStop": 0,
+        "workersAfterStop": 0,
+        "tcpSocketsAfterStop": 0,
+        "httpCallsAfterStop": 0,
+        "noLateDatabaseMutation": true,
+        "transportCounts": {
+          "IPV4_ENDPOINT_ATTEMPT": 4,
+          "IPV6_ENDPOINT_ATTEMPT": 2,
+          "IPV4_ENDPOINT_FAILURE": 4,
+          "IPV6_ENDPOINT_FAILURE": 2
+        },
+        "diagnostics": [
+          "FINDNODE_SENT: >> FINDNODE/v5 id=73b3df542a85283fb4633bc1239077ef31326a528d9be476b961bc9dc84ba90f addr=54.65.172.253:9000",
+          "PROTOCOL: FINDNODE failed id=db182d9df5690f63e373f07b59ed39b0b0bad697cb3fe217fe8a75b67870665b err=RPC timeout",
+          "PROTOCOL: FINDNODE failed id=d2bb1a3ac7b437957d7a8532a32f6e8706702b50a0334c21f3ed7308259dd53f err=RPC timeout",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=367d84594f00e9d4175b11882ce8066fbb818af0ed3771450604fe75eb48651b addr=32.199.4.53:9223",
+          "PROTOCOL: FINDNODE failed id=73b3df542a85283fb4633bc1239077ef31326a528d9be476b961bc9dc84ba90f err=RPC timeout",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=2804ee88396e0938cbeda9d10bb8a65e79485ab09ce8a7a875cc94fb0e178b0f addr=142.132.199.177:12000",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=56389064741be0b134bc6374655e835797cabbdc0d351f92ff5bf015d7de0ecb addr=164.152.160.227:23000",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=56389064741be0b134bc6374655e835797cabbdc0d351f92ff5bf015d7de0ecb addr=164.152.160.227:23000",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=2804ee88396e0938cbeda9d10bb8a65e79485ab09ce8a7a875cc94fb0e178b0f addr=142.132.199.177:12000",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=2804ee88396e0938cbeda9d10bb8a65e79485ab09ce8a7a875cc94fb0e178b0f addr=142.132.199.177:12000",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=367d84594f00e9d4175b11882ce8066fbb818af0ed3771450604fe75eb48651b addr=32.199.4.53:9223",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=367d84594f00e9d4175b11882ce8066fbb818af0ed3771450604fe75eb48651b addr=32.199.4.53:9223",
+          "NODES_RECEIVED: << NODES/v5 id=2804ee88396e0938cbeda9d10bb8a65e79485ab09ce8a7a875cc94fb0e178b0f addr=142.132.199.177:12000 n=4",
+          "NODES_RECEIVED: << NODES/v5 id=2804ee88396e0938cbeda9d10bb8a65e79485ab09ce8a7a875cc94fb0e178b0f addr=142.132.199.177:12000 n=5",
+          "NODES_RECEIVED: << NODES/v5 id=2804ee88396e0938cbeda9d10bb8a65e79485ab09ce8a7a875cc94fb0e178b0f addr=142.132.199.177:12000 n=5",
+          "NODES_RECEIVED: << NODES/v5 id=2804ee88396e0938cbeda9d10bb8a65e79485ab09ce8a7a875cc94fb0e178b0f addr=142.132.199.177:12000 n=2",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=7b81a14bfc483046db3a923deb21cc1652a38a163949b7ff3903792e49e80e3e addr=35.170.181.228:30303",
+          "NODES_RECEIVED: << NODES/v5 id=367d84594f00e9d4175b11882ce8066fbb818af0ed3771450604fe75eb48651b addr=32.199.4.53:9223 n=6",
+          "NODES_RECEIVED: << NODES/v5 id=367d84594f00e9d4175b11882ce8066fbb818af0ed3771450604fe75eb48651b addr=32.199.4.53:9223 n=4",
+          "NODES_RECEIVED: << NODES/v5 id=367d84594f00e9d4175b11882ce8066fbb818af0ed3771450604fe75eb48651b addr=32.199.4.53:9223 n=2",
+          "NODES_RECEIVED: << NODES/v5 id=367d84594f00e9d4175b11882ce8066fbb818af0ed3771450604fe75eb48651b addr=32.199.4.53:9223 n=4",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=78e3991de2657edc64495e6bd5b6baa91076d63ec8e5d1c4a21545ec486e51dc addr=79.231.106.119:9001",
+          "PROTOCOL: FINDNODE failed id=56389064741be0b134bc6374655e835797cabbdc0d351f92ff5bf015d7de0ecb err=RPC timeout",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=781c4012a66f6396070890ad1d7cab71d9de504885ab1148066d141686aaaa81 addr=3.238.50.103:30303",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=7b81a14bfc483046db3a923deb21cc1652a38a163949b7ff3903792e49e80e3e addr=35.170.181.228:30303",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=7b81a14bfc483046db3a923deb21cc1652a38a163949b7ff3903792e49e80e3e addr=35.170.181.228:30303",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=78e3991de2657edc64495e6bd5b6baa91076d63ec8e5d1c4a21545ec486e51dc addr=79.231.106.119:9001",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=78e3991de2657edc64495e6bd5b6baa91076d63ec8e5d1c4a21545ec486e51dc addr=79.231.106.119:9001",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=781c4012a66f6396070890ad1d7cab71d9de504885ab1148066d141686aaaa81 addr=3.238.50.103:30303",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=781c4012a66f6396070890ad1d7cab71d9de504885ab1148066d141686aaaa81 addr=3.238.50.103:30303",
+          "NODES_RECEIVED: << NODES/v5 id=78e3991de2657edc64495e6bd5b6baa91076d63ec8e5d1c4a21545ec486e51dc addr=79.231.106.119:9001 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=78e3991de2657edc64495e6bd5b6baa91076d63ec8e5d1c4a21545ec486e51dc addr=79.231.106.119:9001 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=78e3991de2657edc64495e6bd5b6baa91076d63ec8e5d1c4a21545ec486e51dc addr=79.231.106.119:9001 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=78e3991de2657edc64495e6bd5b6baa91076d63ec8e5d1c4a21545ec486e51dc addr=79.231.106.119:9001 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=78e3991de2657edc64495e6bd5b6baa91076d63ec8e5d1c4a21545ec486e51dc addr=79.231.106.119:9001 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=78e3991de2657edc64495e6bd5b6baa91076d63ec8e5d1c4a21545ec486e51dc addr=79.231.106.119:9001 n=1",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=7ae47fa194d1f5ff92cd26a219a76a1cba5b29de48fec18d18ade85786cdc2b1 addr=165.120.56.223:9000",
+          "NODES_RECEIVED: << NODES/v5 id=7b81a14bfc483046db3a923deb21cc1652a38a163949b7ff3903792e49e80e3e addr=35.170.181.228:30303 n=4",
+          "NODES_RECEIVED: << NODES/v5 id=7b81a14bfc483046db3a923deb21cc1652a38a163949b7ff3903792e49e80e3e addr=35.170.181.228:30303 n=4",
+          "NODES_RECEIVED: << NODES/v5 id=7b81a14bfc483046db3a923deb21cc1652a38a163949b7ff3903792e49e80e3e addr=35.170.181.228:30303 n=4",
+          "NODES_RECEIVED: << NODES/v5 id=7b81a14bfc483046db3a923deb21cc1652a38a163949b7ff3903792e49e80e3e addr=35.170.181.228:30303 n=4",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=7a81ddd38570baddc1b0ee0b047ec58e6d029adede336801297f514f3d9c8ed1 addr=198.13.130.161:9222",
+          "NODES_RECEIVED: << NODES/v5 id=781c4012a66f6396070890ad1d7cab71d9de504885ab1148066d141686aaaa81 addr=3.238.50.103:30303 n=4",
+          "NODES_RECEIVED: << NODES/v5 id=781c4012a66f6396070890ad1d7cab71d9de504885ab1148066d141686aaaa81 addr=3.238.50.103:30303 n=5",
+          "NODES_RECEIVED: << NODES/v5 id=781c4012a66f6396070890ad1d7cab71d9de504885ab1148066d141686aaaa81 addr=3.238.50.103:30303 n=2",
+          "NODES_RECEIVED: << NODES/v5 id=781c4012a66f6396070890ad1d7cab71d9de504885ab1148066d141686aaaa81 addr=3.238.50.103:30303 n=5",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=7aa16f8db912add7c0d3ddae18c91b810521b28acfe48fd20a4d7b437252bef8 addr=162.55.240.231:9000",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=7ae47fa194d1f5ff92cd26a219a76a1cba5b29de48fec18d18ade85786cdc2b1 addr=165.120.56.223:9000",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=7ae47fa194d1f5ff92cd26a219a76a1cba5b29de48fec18d18ade85786cdc2b1 addr=165.120.56.223:9000",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=7a81ddd38570baddc1b0ee0b047ec58e6d029adede336801297f514f3d9c8ed1 addr=198.13.130.161:9222",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=7a81ddd38570baddc1b0ee0b047ec58e6d029adede336801297f514f3d9c8ed1 addr=198.13.130.161:9222",
+          "WHOAREYOU_RECEIVED: << WHOAREYOU/v5 id=7aa16f8db912add7c0d3ddae18c91b810521b28acfe48fd20a4d7b437252bef8 addr=162.55.240.231:9000",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=7aa16f8db912add7c0d3ddae18c91b810521b28acfe48fd20a4d7b437252bef8 addr=162.55.240.231:9000",
+          "NODES_RECEIVED: << NODES/v5 id=7ae47fa194d1f5ff92cd26a219a76a1cba5b29de48fec18d18ade85786cdc2b1 addr=165.120.56.223:9000 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=7ae47fa194d1f5ff92cd26a219a76a1cba5b29de48fec18d18ade85786cdc2b1 addr=165.120.56.223:9000 n=1",
+          "NODES_RECEIVED: << NODES/v5 id=7ae47fa194d1f5ff92cd26a219a76a1cba5b29de48fec18d18ade85786cdc2b1 addr=165.120.56.223:9000 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=7ae47fa194d1f5ff92cd26a219a76a1cba5b29de48fec18d18ade85786cdc2b1 addr=165.120.56.223:9000 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=7ae47fa194d1f5ff92cd26a219a76a1cba5b29de48fec18d18ade85786cdc2b1 addr=165.120.56.223:9000 n=3",
+          "NODES_RECEIVED: << NODES/v5 id=7ae47fa194d1f5ff92cd26a219a76a1cba5b29de48fec18d18ade85786cdc2b1 addr=165.120.56.223:9000 n=3",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=7aa6d7f98da193fc9ca0fa310ae710ba084352569f4a47bc7aca03693782a68c addr=34.148.26.229:9000",
+          "PROTOCOL: FINDNODE failed id=7a81ddd38570baddc1b0ee0b047ec58e6d029adede336801297f514f3d9c8ed1 err=RPC timeout",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=7aa054a2b53155256e5a79c515ca5e2189d1a6542791e87235ffdf1d361945e1 addr=88.99.6.214:12001",
+          "PROTOCOL: FINDNODE failed id=7aa16f8db912add7c0d3ddae18c91b810521b28acfe48fd20a4d7b437252bef8 err=RPC timeout",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=7aa85b30e7b7281079df722ea1f8a36a6762ce929bf5818b364067935fc2a41e addr=80.253.91.2:30305"
+        ],
+        "runningAfterStop": false,
+        "childProcessesAfterStop": 0,
+        "discv4SocketReleased": true,
+        "discoveryThreadsAfterStop": [],
+        "backgroundInspectionThreadsAfterStop": []
+      }
+    ],
+    "publicIpv6P2pAttempts": [
+      {
+        "identity": "f63bbb17d282daa515d4159e3457eb135d35d273167fc489be5f82e3b4192f8ae1a9808b0174f3f0a926bfe8dedaf88c0ddf54b8a86532083d236e9611b4c28d",
+        "endpoint": "[2001:41d0:24c:600:0:0:0:0]:30303",
+        "addressFamily": "IPV6",
+        "result": {
+          "tcp": {
+            "state": "FAILED",
+            "durationMs": null,
+            "reasonCode": "TCP_NO_ROUTE_TO_HOST"
+          },
+          "auth": {
+            "state": "NOT_TESTED",
+            "durationMs": null,
+            "reasonCode": "TCP_NOT_CONNECTED"
+          },
+          "hello": {
+            "state": "NOT_TESTED",
+            "durationMs": null,
+            "reasonCode": "AUTH_NOT_COMPLETED"
+          },
+          "status": {
+            "state": "NOT_TESTED",
+            "durationMs": null,
+            "reasonCode": "HELLO_NOT_COMPLETED"
+          },
+          "helloInfo": null,
+          "statusInfo": null,
+          "helloTrace": null,
+          "statusTrace": null
+        }
+      },
+      {
+        "identity": "daf9eec1a6174feb6b2535492b208c0a9f287a5176941c2bc45a8988a80f97f00620da0195b9cb6869c9a458b549ac5c093b8249161895ae86d1f81ce6f0bbe4",
+        "endpoint": "[2607:fdc0:781:3:0:1:0:37]:30303",
+        "addressFamily": "IPV6",
+        "result": {
+          "tcp": {
+            "state": "FAILED",
+            "durationMs": null,
+            "reasonCode": "TCP_NO_ROUTE_TO_HOST"
+          },
+          "auth": {
+            "state": "NOT_TESTED",
+            "durationMs": null,
+            "reasonCode": "TCP_NOT_CONNECTED"
+          },
+          "hello": {
+            "state": "NOT_TESTED",
+            "durationMs": null,
+            "reasonCode": "AUTH_NOT_COMPLETED"
+          },
+          "status": {
+            "state": "NOT_TESTED",
+            "durationMs": null,
+            "reasonCode": "HELLO_NOT_COMPLETED"
+          },
+          "helloInfo": null,
+          "statusInfo": null,
+          "helloTrace": null,
+          "statusTrace": null
+        }
+      }
+    ],
+    "nodesCount": 271,
+    "discovery_observationsCount": 549,
+    "enr_observationsCount": 263,
+    "p2p_observationsCount": 0,
+    "sourceCounts": [
+      [
+        "ENR",
+        172
+      ],
+      [
+        "discv4",
+        220
+      ],
+      [
+        "discv5",
+        157
+      ]
+    ],
+    "enrOutcomes": [
+      [
+        "BOND_TIMEOUT",
+        14
+      ],
+      [
+        "CANCELLED",
+        68
+      ],
+      [
+        "INVALID_ETH_ENTRY",
+        5
+      ],
+      [
+        "REQUEST_TIMEOUT",
+        4
+      ],
+      [
+        "VALID",
+        172
+      ]
+    ],
+    "endpointFamilies": [
+      [
+        "IPV4",
+        1094
+      ],
+      [
+        "IPV6",
+        14
+      ]
+    ],
+    "uniqueEndpointFamilies": [
+      [
+        "IPV4",
+        545
+      ],
+      [
+        "IPV6",
+        7
+      ]
+    ],
+    "dualStackIdentities": [
+      [
+        4
+      ]
+    ],
+    "bothProviders": [
+      [
+        0
+      ]
+    ],
+    "authenticatedDiscv5Observations": [
+      [
+        12
+      ]
+    ],
+    "integrity": [
+      [
+        "ok"
+      ]
+    ],
+    "foreignKeys": [],
+    "reopenedRows": 271,
+    "canonicalIdentities": 271,
+    "finishedAt": "2026-09-29T11:51:25.009454Z"
+  },
+  "exactEndpointCaptureRun": {
+    "startedAt": "2026-09-29T11:51:54.337194Z",
+    "historicalRowsRead": 2943,
+    "historicalCanonicalIdentities": 2842,
+    "historicalPublicIpv6Enrs": [
+      "enr:-Ky4QJZC7EaO1zX9ILcHiRyeLT1QM0zRyiukjWIut1lzn1D6bLMgvIVoRDG3YEYLuaHnrOQtZs2qQAmKhhGU8_QE3PcCg2V0aMfGhCaJVraAgmlkgnY0gmlwhAAAAACDaXA2kCABQdACTAYAAAAAAAAAAACJc2VjcDI1NmsxoQP2O7sX0oLapRXUFZ40V-sTXTXScxZ_xIm-X4LjtBkvioN0Y3CCdl-DdWRwgnZf",
+      "enr:-Ky4QBIgk83HPdNRHTN0LFTh8ScxT7EKVo-95VNXABchMsZJbMowcDDHjPjXZBz_5k5o3B810VHHM7_xPyiAruoYRQEIg2V0aMfGhAfJRi6AgmlkgnY0gmlwhECCLIyDaXA2kCYH_cAHgQADAAAAAQAAADeJc2VjcDI1NmsxoQLa-e7BphdP62slNUkrIIwKnyh6UXaUHCvEWomIqA-X8IN0Y3CCdl-DdWRwgnZf"
+    ],
+    "observerIpv6InternetCheck": "NoRouteToHostException: No route to host",
+    "scannerRuns": [
+      {
+        "durationSeconds": 45,
+        "runningBeforeStop": true,
+        "stopMs": 17,
+        "ipv6EndpointDiagnostics": [
+          "ENDPOINT_ATTEMPT: [2607:fdc0:781:3:0:1:0:37]:30303 ",
+          "ENDPOINT_FAILURE: [2607:fdc0:781:3:0:1:0:37]:30303 write udp6 [::]:53092->[2607:fdc0:781:3:0:1:0:37]:30303: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: [2001:41d0:24c:600::]:30303 ",
+          "ENDPOINT_FAILURE: [2001:41d0:24c:600::]:30303 write udp6 [::]:53092->[2001:41d0:24c:600::]:30303: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: [2a01:4f8:2200:42cb::2]:9000 ",
+          "ENDPOINT_FAILURE: [2a01:4f8:2200:42cb::2]:9000 write udp6 [::]:53092->[2a01:4f8:2200:42cb::2]:9000: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: [2a01:4f9:3070:3013::2]:9002 ",
+          "ENDPOINT_FAILURE: [2a01:4f9:3070:3013::2]:9002 write udp6 [::]:53092->[2a01:4f9:3070:3013::2]:9002: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: [2a01:4f8:241:4b81::2]:9001 ",
+          "ENDPOINT_FAILURE: [2a01:4f8:241:4b81::2]:9001 write udp6 [::]:53092->[2a01:4f8:241:4b81::2]:9001: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: [2a01:4f9:3a:3c68::2]:9000 ",
+          "ENDPOINT_FAILURE: [2a01:4f9:3a:3c68::2]:9000 write udp6 [::]:53092->[2a01:4f9:3a:3c68::2]:9000: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: [2607:5300:221:7e00::]:9000 ",
+          "ENDPOINT_FAILURE: [2607:5300:221:7e00::]:9000 write udp6 [::]:53092->[2607:5300:221:7e00::]:9000: sendto: no route to host"
+        ],
+        "peakScannerWorkers": 10,
+        "peakHttpCalls": 7,
+        "capturedExecutors": 2,
+        "executorsTerminated": true,
+        "queuedTasksAfterStop": 0,
+        "activeTasksAfterStop": 0,
+        "workersAfterStop": 0,
+        "tcpSocketsAfterStop": 0,
+        "httpCallsAfterStop": 0,
+        "noLateDatabaseMutation": true,
+        "transportCounts": {
+          "IPV4_ENDPOINT_ATTEMPT": 49,
+          "IPV4_ENDPOINT_FAILURE": 46,
+          "IPV4_ENDPOINT_SUCCESS": 3,
+          "IPV6_ENDPOINT_ATTEMPT": 7,
+          "IPV6_ENDPOINT_FAILURE": 7
+        },
+        "diagnostics": [
+          "ENDPOINT_FAILURE: 65.21.27.41:12000 RPC timeout",
+          "ENDPOINT_ATTEMPT: 116.202.232.190:9001 ",
+          "ENDPOINT_FAILURE: 116.202.232.190:9001 RPC timeout",
+          "ENDPOINT_ATTEMPT: [2a01:4f8:241:4b81::2]:9001 ",
+          "ENDPOINT_FAILURE: [2a01:4f8:241:4b81::2]:9001 write udp6 [::]:53092->[2a01:4f8:241:4b81::2]:9001: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: 37.27.109.195:12001 ",
+          "ENDPOINT_FAILURE: 37.27.109.195:12001 RPC timeout",
+          "ENDPOINT_ATTEMPT: 135.181.220.59:9000 ",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=67.217.54.146:9000 err=no matching call",
+          "ENDPOINT_FAILURE: 135.181.220.59:9000 RPC timeout",
+          "ENDPOINT_ATTEMPT: [2a01:4f9:3a:3c68::2]:9000 ",
+          "ENDPOINT_FAILURE: [2a01:4f9:3a:3c68::2]:9000 write udp6 [::]:53092->[2a01:4f9:3a:3c68::2]:9000: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: 144.76.17.55:30327 ",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=116.202.232.190:9001 err=no matching call",
+          "ENDPOINT_FAILURE: 144.76.17.55:30327 RPC timeout",
+          "ENDPOINT_ATTEMPT: 100.31.112.75:9000 ",
+          "ENDPOINT_FAILURE: 100.31.112.75:9000 RPC timeout",
+          "ENDPOINT_ATTEMPT: 65.21.20.111:9200 ",
+          "ENDPOINT_FAILURE: 65.21.20.111:9200 RPC timeout",
+          "ENDPOINT_ATTEMPT: 82.25.203.90:9100 ",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=37.27.109.195:12001 err=no matching call",
+          "ENDPOINT_FAILURE: 82.25.203.90:9100 RPC timeout",
+          "ENDPOINT_ATTEMPT: 13.192.212.196:29888 ",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=135.181.220.59:9000 err=no matching call",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=144.76.17.55:30327 err=no matching call",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=100.31.112.75:9000 err=no matching call",
+          "ENDPOINT_FAILURE: 13.192.212.196:29888 RPC timeout",
+          "ENDPOINT_ATTEMPT: 144.76.98.185:22127 ",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=65.21.20.111:9200 err=no matching call",
+          "CORRELATION_FAILURE: Unsolicited/late PONG/v5 response id=c8257a997d5fda644a5caa906434462900d6447026449a191c5e75ddacbd0dcb addr=144.76.98.185:22127",
+          "CORRELATION_FAILURE: Unsolicited/late PONG/v5 response id=374a997ccd0ddf21dc8c78a220d703ae24e05836e5b6c4a41a8ccc19e3ef5416 addr=57.129.84.141:30303",
+          "ENDPOINT_FAILURE: 144.76.98.185:22127 RPC timeout",
+          "ENDPOINT_ATTEMPT: 100.1.232.133:30404 ",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=13.192.212.196:29888 err=no matching call",
+          "ENDPOINT_FAILURE: 100.1.232.133:30404 RPC timeout",
+          "ENDPOINT_ATTEMPT: 148.113.224.126:9000 ",
+          "ENDPOINT_FAILURE: 148.113.224.126:9000 RPC timeout",
+          "ENDPOINT_ATTEMPT: [2607:5300:221:7e00::]:9000 ",
+          "ENDPOINT_FAILURE: [2607:5300:221:7e00::]:9000 write udp6 [::]:53092->[2607:5300:221:7e00::]:9000: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: 150.136.148.96:12000 ",
+          "ENDPOINT_FAILURE: 150.136.148.96:12000 RPC timeout",
+          "ENDPOINT_ATTEMPT: 35.203.37.242:9010 ",
+          "CORRELATION_FAILURE: Unsolicited/late PONG/v5 response id=c8257a997d5fda644a5caa906434462900d6447026449a191c5e75ddacbd0dcb addr=144.76.98.185:22127",
+          "ENDPOINT_FAILURE: 35.203.37.242:9010 RPC timeout",
+          "ENDPOINT_ATTEMPT: 57.129.49.49:9000 ",
+          "ENDPOINT_FAILURE: 57.129.49.49:9000 RPC timeout",
+          "ENDPOINT_ATTEMPT: 76.85.138.65:30303 ",
+          "ENDPOINT_FAILURE: 76.85.138.65:30303 RPC timeout",
+          "ENDPOINT_ATTEMPT: 208.115.251.9:30303 ",
+          "ENDPOINT_FAILURE: 208.115.251.9:30303 RPC timeout",
+          "ENDPOINT_ATTEMPT: 88.96.45.203:30001 ",
+          "ENDPOINT_FAILURE: 88.96.45.203:30001 RPC timeout",
+          "ENDPOINT_ATTEMPT: 45.59.169.152:9026 ",
+          "ENDPOINT_FAILURE: 45.59.169.152:9026 RPC timeout",
+          "ENDPOINT_ATTEMPT: 173.95.18.210:9000 ",
+          "ENDPOINT_FAILURE: 173.95.18.210:9000 RPC timeout",
+          "CORRELATION_FAILURE: Unsolicited/late PONG/v5 response id=367119c92a4f1a0ccd903fc21b9fb76cee899002c4f6295c9e488e5e55d2d2b4 addr=51.68.38.70:30303",
+          "PROTOCOL: << FINDNODE/v5 id=2ecf80a6068c579f60bc97b585a9e0e7ba640bd9433fd14210aa5d08250522fd addr=174.87.125.97:40303",
+          "PROTOCOL: >> NODES/v5 id=2ecf80a6068c579f60bc97b585a9e0e7ba640bd9433fd14210aa5d08250522fd addr=174.87.125.97:40303 n=0",
+          "CORRELATION_FAILURE: Unsolicited/late PONG/v5 response id=2ecf80a6068c579f60bc97b585a9e0e7ba640bd9433fd14210aa5d08250522fd addr=174.87.125.97:40303",
+          "CORRELATION_FAILURE: Unsolicited/late PONG/v5 response id=2a1bd2a2a1dc3344849c636c436ed6313fc77b979dfc04f867e30c3c2f2bad01 addr=170.23.151.203:12023",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=208.115.251.9:30303 err=no matching call",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=88.96.45.203:30001 err=no matching call",
+          "CORRELATION_FAILURE: Unsolicited/late PONG/v5 response id=9a1c1471d56fb3f52db037676104231fb6fd02c9770ce557bd476a3631772612 addr=45.59.169.152:9026"
+        ],
+        "runningAfterStop": false,
+        "childProcessesAfterStop": 0,
+        "discv4SocketReleased": true,
+        "discoveryThreadsAfterStop": [],
+        "backgroundInspectionThreadsAfterStop": []
+      },
+      {
+        "durationSeconds": 12,
+        "runningBeforeStop": true,
+        "stopMs": 11,
+        "ipv6EndpointDiagnostics": [
+          "ENDPOINT_ATTEMPT: [2001:41d0:24c:600::]:30303 ",
+          "ENDPOINT_FAILURE: [2001:41d0:24c:600::]:30303 write udp6 [::]:61390->[2001:41d0:24c:600::]:30303: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: [2607:fdc0:781:3:0:1:0:37]:30303 ",
+          "ENDPOINT_FAILURE: [2607:fdc0:781:3:0:1:0:37]:30303 write udp6 [::]:61390->[2607:fdc0:781:3:0:1:0:37]:30303: sendto: no route to host"
+        ],
+        "peakScannerWorkers": 10,
+        "peakHttpCalls": 6,
+        "capturedExecutors": 1,
+        "executorsTerminated": true,
+        "queuedTasksAfterStop": 0,
+        "activeTasksAfterStop": 0,
+        "workersAfterStop": 0,
+        "tcpSocketsAfterStop": 0,
+        "httpCallsAfterStop": 0,
+        "noLateDatabaseMutation": true,
+        "transportCounts": {
+          "IPV4_ENDPOINT_FAILURE": 4,
+          "IPV6_ENDPOINT_ATTEMPT": 2,
+          "IPV4_ENDPOINT_ATTEMPT": 4,
+          "IPV6_ENDPOINT_FAILURE": 2
+        },
+        "diagnostics": [
+          "ready: enr:-Hu4QKp8Mg_F80_psv5a_gxJK_oIX-YUAX7aX7D4d2HBixieSUDqdyi2pKUrJpsRR29Mo-skldxGK0mif7zVpvtl_K2GAaDtApMAgmlkgnY0iXNlY3AyNTZrMaEC7TGdtKVfXxGh-c90lyj2QL3JJ3lD5sY1gOnauTosqVA",
+          "ENDPOINT_ATTEMPT: [2001:41d0:24c:600::]:30303 ",
+          "ENDPOINT_FAILURE: [2001:41d0:24c:600::]:30303 write udp6 [::]:61390->[2001:41d0:24c:600::]:30303: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: 64.130.44.140:30303 ",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=b55cb6e27f9d714e2bcf6199ccebad6593db24d8c144ddd24f200405bf264b59 addr=4.196.214.4:9000",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=a82dedc7b62e16a799b170b0b99d930606d46fd60157e49e48994c8a6a283f34 addr=4.157.240.54:9000",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=191bbf49632da5393590a33d54421e79e8e5c96ade72f0ba69e1803095de6b04 addr=18.223.219.100:9000",
+          "ENDPOINT_FAILURE: 64.130.44.140:30303 RPC timeout",
+          "ENDPOINT_ATTEMPT: [2607:fdc0:781:3:0:1:0:37]:30303 ",
+          "PROTOCOL: FINDNODE failed id=191bbf49632da5393590a33d54421e79e8e5c96ade72f0ba69e1803095de6b04 err=RPC timeout",
+          "ENDPOINT_FAILURE: [2607:fdc0:781:3:0:1:0:37]:30303 write udp6 [::]:61390->[2607:fdc0:781:3:0:1:0:37]:30303: sendto: no route to host",
+          "ENDPOINT_ATTEMPT: 4.196.214.4:9000 ",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=90a083063f5717abfb6a73eb62ce1968d3d71a8d21aaf5e806532b6b71aa04fa addr=64.130.44.140:30303",
+          "PROTOCOL: FINDNODE failed id=a82dedc7b62e16a799b170b0b99d930606d46fd60157e49e48994c8a6a283f34 err=RPC timeout",
+          "PROTOCOL: FINDNODE failed id=b55cb6e27f9d714e2bcf6199ccebad6593db24d8c144ddd24f200405bf264b59 err=RPC timeout",
+          "ENDPOINT_FAILURE: 4.196.214.4:9000 RPC timeout",
+          "ENDPOINT_ATTEMPT: 4.157.240.54:9000 ",
+          "PROTOCOL: FINDNODE failed id=90a083063f5717abfb6a73eb62ce1968d3d71a8d21aaf5e806532b6b71aa04fa err=RPC timeout",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=90a083063f5717abfb6a73eb62ce1968d3d71a8d21aaf5e806532b6b71aa04fa addr=64.130.44.140:30303",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=b55cb6e27f9d714e2bcf6199ccebad6593db24d8c144ddd24f200405bf264b59 addr=4.196.214.4:9000",
+          "ENDPOINT_FAILURE: 4.157.240.54:9000 RPC timeout",
+          "PROTOCOL: FINDNODE failed id=90a083063f5717abfb6a73eb62ce1968d3d71a8d21aaf5e806532b6b71aa04fa err=RPC timeout",
+          "ENDPOINT_ATTEMPT: 18.223.219.100:9000 ",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=a82dedc7b62e16a799b170b0b99d930606d46fd60157e49e48994c8a6a283f34 addr=4.157.240.54:9000",
+          "PROTOCOL: FINDNODE failed id=b55cb6e27f9d714e2bcf6199ccebad6593db24d8c144ddd24f200405bf264b59 err=RPC timeout",
+          "ENDPOINT_FAILURE: 18.223.219.100:9000 RPC timeout",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=191bbf49632da5393590a33d54421e79e8e5c96ade72f0ba69e1803095de6b04 addr=18.223.219.100:9000",
+          "PROTOCOL: FINDNODE failed id=a82dedc7b62e16a799b170b0b99d930606d46fd60157e49e48994c8a6a283f34 err=RPC timeout",
+          "PROTOCOL: FINDNODE failed id=191bbf49632da5393590a33d54421e79e8e5c96ade72f0ba69e1803095de6b04 err=RPC timeout",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=90a083063f5717abfb6a73eb62ce1968d3d71a8d21aaf5e806532b6b71aa04fa addr=64.130.44.140:30303",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=b55cb6e27f9d714e2bcf6199ccebad6593db24d8c144ddd24f200405bf264b59 addr=4.196.214.4:9000",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=18.223.219.100:9000 err=no matching call",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=18.223.219.100:9000 err=no matching call",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=18.223.219.100:9000 err=no matching call",
+          "PROTOCOL: Invalid WHOAREYOU/v5 addr=18.223.219.100:9000 err=no matching call",
+          "PROTOCOL: FINDNODE failed id=b55cb6e27f9d714e2bcf6199ccebad6593db24d8c144ddd24f200405bf264b59 err=RPC timeout",
+          "PROTOCOL: FINDNODE failed id=90a083063f5717abfb6a73eb62ce1968d3d71a8d21aaf5e806532b6b71aa04fa err=RPC timeout",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=b55cb6e27f9d714e2bcf6199ccebad6593db24d8c144ddd24f200405bf264b59 addr=4.196.214.4:9000",
+          "FINDNODE_SENT: >> FINDNODE/v5 id=90a083063f5717abfb6a73eb62ce1968d3d71a8d21aaf5e806532b6b71aa04fa addr=64.130.44.140:30303",
+          "PROTOCOL: FINDNODE failed id=b55cb6e27f9d714e2bcf6199ccebad6593db24d8c144ddd24f200405bf264b59 err=RPC timeout",
+          "PROTOCOL: FINDNODE failed id=90a083063f5717abfb6a73eb62ce1968d3d71a8d21aaf5e806532b6b71aa04fa err=RPC timeout"
+        ],
+        "runningAfterStop": false,
+        "childProcessesAfterStop": 0,
+        "discv4SocketReleased": true,
+        "discoveryThreadsAfterStop": [],
+        "backgroundInspectionThreadsAfterStop": []
+      }
+    ],
+    "publicIpv6P2pAttempts": [
+      {
+        "identity": "f63bbb17d282daa515d4159e3457eb135d35d273167fc489be5f82e3b4192f8ae1a9808b0174f3f0a926bfe8dedaf88c0ddf54b8a86532083d236e9611b4c28d",
+        "endpoint": "[2001:41d0:24c:600:0:0:0:0]:30303",
+        "addressFamily": "IPV6",
+        "result": {
+          "tcp": {
+            "state": "FAILED",
+            "durationMs": null,
+            "reasonCode": "TCP_NO_ROUTE_TO_HOST"
+          },
+          "auth": {
+            "state": "NOT_TESTED",
+            "durationMs": null,
+            "reasonCode": "TCP_NOT_CONNECTED"
+          },
+          "hello": {
+            "state": "NOT_TESTED",
+            "durationMs": null,
+            "reasonCode": "AUTH_NOT_COMPLETED"
+          },
+          "status": {
+            "state": "NOT_TESTED",
+            "durationMs": null,
+            "reasonCode": "HELLO_NOT_COMPLETED"
+          },
+          "helloInfo": null,
+          "statusInfo": null,
+          "helloTrace": null,
+          "statusTrace": null
+        }
+      },
+      {
+        "identity": "daf9eec1a6174feb6b2535492b208c0a9f287a5176941c2bc45a8988a80f97f00620da0195b9cb6869c9a458b549ac5c093b8249161895ae86d1f81ce6f0bbe4",
+        "endpoint": "[2607:fdc0:781:3:0:1:0:37]:30303",
+        "addressFamily": "IPV6",
+        "result": {
+          "tcp": {
+            "state": "FAILED",
+            "durationMs": null,
+            "reasonCode": "TCP_NO_ROUTE_TO_HOST"
+          },
+          "auth": {
+            "state": "NOT_TESTED",
+            "durationMs": null,
+            "reasonCode": "TCP_NOT_CONNECTED"
+          },
+          "hello": {
+            "state": "NOT_TESTED",
+            "durationMs": null,
+            "reasonCode": "AUTH_NOT_COMPLETED"
+          },
+          "status": {
+            "state": "NOT_TESTED",
+            "durationMs": null,
+            "reasonCode": "HELLO_NOT_COMPLETED"
+          },
+          "helloInfo": null,
+          "statusInfo": null,
+          "helloTrace": null,
+          "statusTrace": null
+        }
+      }
+    ],
+    "nodesCount": 45,
+    "discovery_observationsCount": 92,
+    "enr_observationsCount": 47,
+    "p2p_observationsCount": 0,
+    "sourceCounts": [
+      [
+        "ENR",
+        46
+      ],
+      [
+        "discv5",
+        46
+      ]
+    ],
+    "enrOutcomes": [
+      [
+        "INVALID_ETH_ENTRY",
+        1
+      ],
+      [
+        "VALID",
+        46
+      ]
+    ],
+    "endpointFamilies": [
+      [
+        "IPV4",
+        180
+      ],
+      [
+        "IPV6",
+        20
+      ]
+    ],
+    "uniqueEndpointFamilies": [
+      [
+        "IPV4",
+        88
+      ],
+      [
+        "IPV6",
+        10
+      ]
+    ],
+    "dualStackIdentities": [
+      [
+        5
+      ]
+    ],
+    "bothProviders": [
+      [
+        0
+      ]
+    ],
+    "authenticatedDiscv5Observations": [
+      [
+        2
+      ]
+    ],
+    "integrity": [
+      [
+        "ok"
+      ]
+    ],
+    "foreignKeys": [],
+    "reopenedRows": 45,
+    "canonicalIdentities": 45,
+    "finishedAt": "2026-09-29T11:52:57.193684Z"
+  },
+  "newValidatedPublicIpv6Enrs": [
+    [
+      "392943d0eee4a4e07565d5c38b1435b490a648ef80a0e2eb9175ff62cc1ece6cb1f7b4e131d2781f66b332d6eb45349ff74472a50c07bb2161811243dbc62290",
+      "2a01:4f8:2200:42cb:0:0:0:2",
+      "enr:-QEZuEDOknPZYXmVg1cmGVVBZ9_Fx5X8EiCd5Q3luLPf2LyJ9TDkpi2AoLWC_nISfln8V53EEuvKiymmR0WLoeDRBdpHFIdhdHRuZXRziAAAAAAAAAADg2NnYwSGY2xpZW500YpMaWdodGhvdXNlhTguMi4whGV0aDKQjJ9i_gYAAAD__________4JpZIJ2NIJpcIQxDFKgg2lwNpAqAQT4IgBCywAAAAAAAAACg25mZIQAAAAAhHF1aWOCIymFcXVpYzaCIymJc2VjcDI1NmsxoQI5KUPQ7uSk4HVl1cOLFDW0kKZI74Cg4uuRdf9izB7ObIhzeW5jbmV0cwCDdGNwgiMohHRjcDaCIyiDdWRwgiMohHVkcDaCIyg"
+    ],
+    [
+      "6284346cb77a3f5f3faa6d7a5cc64d1dc0e138ed29f090ae2beab309e9c4e0baf1aa85b8403740cf201bbaad918d8cdc34a68ea21e3098f844cdc4295a277752",
+      "2a01:4f9:3070:3013:0:0:0:2",
+      "enr:-QEbuEAcmolvWv2MySfCXa7VxnuaBT52KtjoAMJ7g_sIH5BnFhvcKxlkBaJA1zXEDez1O--9lMecLhM2gA28gZz95FVWgg6xh2F0dG5ldHOI__________-DY2djBIZjbGllbnTRikxpZ2h0aG91c2WFOC4xLjOEZXRoMpAyN9q2BgAAZP__________gmlkgnY0gmlwhCUbfhyDaXA2kCoBBPkwcDATAAAAAAAAAAKDbmZkhDI32raEcXVpY4IjK4VxdWljNoIjK4lzZWNwMjU2azGhAmKENGy3ej9fP6ptelzGTR3A4TjtKfCQrivqswnpxOC6iHN5bmNuZXRzD4N0Y3CCIyqEdGNwNoIjKoN1ZHCCIyqEdWRwNoIjKg"
+    ],
+    [
+      "77dff52e35f6832b9e5929a39051b61a724383cafde21c1a5b256540278183e417c521c3b5b8101dba082229553a1f06160c6faf9a786b5066022deb6c8a90db",
+      "2607:5300:221:7e00:0:0:0:0",
+      "enr:-QEcuEBNjdmOTLxXV_BAvzSpTCd3SwieKU7fNzzh-qvDDZDHvxqA6eZp0WKzo5syrLqBt92Jc7pZCJwP9gHlrhUVw69cggaxh2F0dG5ldHOI__________-DY2djgYCGY2xpZW500YpMaWdodGhvdXNlhTguMi4yhGV0aDKQjJ9i_gYAAAD__________4JpZIJ2NIJpcISUceB-g2lwNpAmB1MAAiF-AAAAAAAAAAAAg25mZIQAAAAAhHF1aWOCIymFcXVpYzaCIymJc2VjcDI1NmsxoQN33_UuNfaDK55ZKaOQUbYackODyv3iHBpbJWVAJ4GD5IhzeW5jbmV0cw-DdGNwgiMohHRjcDaCIyiDdWRwgiMohHVkcDaCIyg"
+    ],
+    [
+      "85b0a2b29455c03f9561f605d6b54e94691291f969350e9610c88abfac3b63c926aa557d1c94373f67ebe11213510d1043df536bfbd447419f767faff463122a",
+      "2a01:4f9:3a:3c68:0:0:0:2",
+      "enr:-QEZuECCrgDur9L4E2C6Fbz7FuKs02A18PEX2lUBj7o-vfD1DQ62fbdZAwUJEzw8WHo_f92O9FuYnqbp72H1IuynCPlIHodhdHRuZXRziAAAAAAAAAADg2NnYwSGY2xpZW500YpMaWdodGhvdXNlhTguMS4zhGV0aDKQdNAUWZAAAHX__________4JpZIJ2NIJpcISHtdw7g2lwNpAqAQT5ADo8aAAAAAAAAAACg25mZIR00BRZhHF1aWOCIymFcXVpYzaCIymJc2VjcDI1NmsxoQKFsKKylFXAP5Vh9gXWtU6UaRKR-Wk1DpYQyIq_rDtjyYhzeW5jbmV0cwCDdGNwgiMohHRjcDaCIyiDdWRwgiMohHVkcDaCIyg"
+    ],
+    [
+      "8cd7adfb51bfbca2033935d515de035ac5484911202cf0af29a4c86659863d33e41bcecebd16039fe12da07331fcf18d0b0c84661d3c72f29eb38272a6d0c83e",
+      "2a01:4f8:241:4b81:0:0:0:2",
+      "enr:-QEZuECcDejgkc87PWFPLYnHoDMO2ZCi_dd_rNaSb8W7gtkS7Cljbh3_JicsxNEed9hTIPI_QKSsocNMaPI29F1nIvvuB4dhdHRuZXRziAAAAAAAAAAPg2NnYwSGY2xpZW500YpMaWdodGhvdXNlhTguMS4zhGV0aDKQMjfatgYAAGT__________4JpZIJ2NIJpcIR0yui-g2lwNpAqAQT4AkFLgQAAAAAAAAACg25mZIQyN9q2hHF1aWOCIyqFcXVpYzaCIyqJc2VjcDI1NmsxoQKM1637Ub-8ogM5NdUV3gNaxUhJESAs8K8ppMhmWYY9M4hzeW5jbmV0cwCDdGNwgiMphHRjcDaCIymDdWRwgiMphHVkcDaCIyk"
+    ]
+  ]
+}

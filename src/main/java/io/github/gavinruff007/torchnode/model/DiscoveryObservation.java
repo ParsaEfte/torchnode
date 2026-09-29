@@ -14,6 +14,10 @@ public record DiscoveryObservation(NodeIdentity identity, String source, List<No
         Objects.requireNonNull(observedAt);
         Objects.requireNonNull(provenance);
     }
+    public java.util.Map<String,Object> toMap() {
+        return java.util.Map.of("identity", identity.nodeId(), "source", source, "endpoints", endpoints,
+                "observedAt", observedAt.toString(), "provenance", provenance);
+    }
     public NodeEndpoint endpoint(NodeEndpoint.Purpose purpose, NodeEndpoint.Transport transport) {
         return endpoints.stream().filter(e -> e.purpose() == purpose && e.transport() == transport)
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Missing " + purpose + " endpoint"));

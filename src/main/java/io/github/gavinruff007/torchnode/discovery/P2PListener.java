@@ -1,5 +1,7 @@
 package io.github.gavinruff007.torchnode.discovery;
 
+import io.github.gavinruff007.torchnode.model.EndpointAddress;
+
 import org.bouncycastle.util.encoders.Hex;
 import io.github.gavinruff007.torchnode.model.BondState;
 import org.web3j.rlp.RlpDecoder;
@@ -47,7 +49,7 @@ public class P2PListener {
                     byte packetType = receivedData[97];
                     byte[] rlpData = Arrays.copyOfRange(receivedData, 98, receivedData.length);
 
-                    String sender = packet.getAddress().getHostAddress() + ":" + packet.getPort();
+                    String sender = EndpointAddress.hostPort(packet.getAddress().getHostAddress(), packet.getPort());
 
                     // در حلقه receive، قبل از شرط packetType:
                     System.out.printf("[RAW] From %s | len=%d | type=0x%02x%n",
@@ -90,7 +92,7 @@ public class P2PListener {
         try {
             InetAddress senderIP = packet.getAddress();
             int senderPort = packet.getPort();
-            String sender = senderIP.getHostAddress() + ":" + senderPort;
+            String sender = EndpointAddress.hostPort(senderIP.getHostAddress(), senderPort);
 
             P2PSender.sendPong(myNode, senderIP.getHostAddress(), senderPort, socket, pingHash);
             System.out.println("[→] PONG sent to " + sender);
@@ -148,13 +150,12 @@ public class P2PListener {
                 }
 
                 byte[] ipBytes = ((RlpString) neighborData.getValues().get(0)).getBytes();
-                if (ipBytes.length != 4) {
+                if (ipBytes.length != 4 && ipBytes.length != 16) {
                     System.err.println("[WARN] Invalid IP length, skipping");
                     continue;
                 }
 
-                String ip = (ipBytes[0] & 0xFF) + "." + (ipBytes[1] & 0xFF) + "."
-                        + (ipBytes[2] & 0xFF) + "." + (ipBytes[3] & 0xFF);
+                String ip = java.net.InetAddress.getByAddress(ipBytes).getHostAddress();
 
                 // discv4 NEIGHBORS entry: [ip, udp-port, tcp-port, node-id].
                 // TCP is advertised in field 2; it must never be inferred from field 1 (UDP).

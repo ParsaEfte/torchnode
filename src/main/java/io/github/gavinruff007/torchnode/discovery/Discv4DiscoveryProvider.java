@@ -32,24 +32,28 @@ public final class Discv4DiscoveryProvider implements DiscoveryProvider {
         listener = P2PListener.startListening(socket, myNode, discoveredNodes, bondStates, this::observe);
 
         for (String bootstrap : bootstrapNodes) {
-            String[] parts = bootstrap.split(":");
-            String ip = parts[0];
-            int port = Integer.parseInt(parts[1]);
+            var endpoint = EndpointAddress.parseHostPort(bootstrap);
+            String ip = endpoint.getAddress().getHostAddress();
+            int port = endpoint.getPort();
 
             System.out.println("[ScanDaemon] Pinging bootstrap: " + bootstrap);
-            P2PSender.sendPing(myNode, ip, port, socket);
+            try { P2PSender.sendPing(myNode, ip, port, socket); }
+            catch (Exception e) {
+                System.err.println("[discv4] " + EndpointAddress.hostPort(ip, port) + " " + EndpointAddress.family(ip) + ": " + e.getMessage());
+                continue;
+            }
 
-            String key = ip + ":" + port;
+            String key = EndpointAddress.hostPort(ip, port);
             bondStates.put(key, new BondState(true, false, false, false));
         }
 
         Thread.sleep(2000);
 
         for (String bootstrap : bootstrapNodes) {
-            String[] parts = bootstrap.split(":");
-            String ip = parts[0];
-            int port = Integer.parseInt(parts[1]);
-            String key = ip + ":" + port;
+            var endpoint = EndpointAddress.parseHostPort(bootstrap);
+            String ip = endpoint.getAddress().getHostAddress();
+            int port = endpoint.getPort();
+            String key = EndpointAddress.hostPort(ip, port);
 
             BondState state = bondStates.get(key);
             if (state != null && state.isFullyBonded()) {
@@ -64,9 +68,9 @@ public final class Discv4DiscoveryProvider implements DiscoveryProvider {
         observations.add(new DiscoveryObservation(
                 new NodeIdentity(node.nodeIdHex), protocol(),
                 List.of(new NodeEndpoint(node.ip, NodeEndpoint.Transport.UDP, node.udpPort,
-                                NodeEndpoint.AddressFamily.IPV4, NodeEndpoint.Purpose.DISCOVERY),
+                                EndpointAddress.family(node.ip), NodeEndpoint.Purpose.DISCOVERY),
                         new NodeEndpoint(node.ip, NodeEndpoint.Transport.TCP, node.tcpPort,
-                                NodeEndpoint.AddressFamily.IPV4, NodeEndpoint.Purpose.P2P)),
+                                EndpointAddress.family(node.ip), NodeEndpoint.Purpose.P2P)),
                 Instant.now(), "NEIGHBORS from " + sender));
     }
     @Override public void discover(Consumer<DiscoveryObservation> observer) throws InterruptedException {
@@ -96,7 +100,7 @@ public final class Discv4DiscoveryProvider implements DiscoveryProvider {
             drainObservations(observer);
             if (!running) return;
             try {
-                String key = node.getIp() + ":" + node.getUdpPort();
+                String key = EndpointAddress.hostPort(node.getIp(), node.getUdpPort());
                 BondState state = bondStates.get(key);
 
                 if (state == null || !state.isFullyBonded()) {

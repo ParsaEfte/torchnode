@@ -36,6 +36,10 @@ public record P2pInspectionResult(Stage tcp, Stage auth, Stage hello, Stage stat
                 case "NO_COMPATIBLE_ETH_CAPABILITY" -> "Peer offers no mutually supported ETH capability";
                 case "INVALID_NODE_ID" -> "Discovery did not provide a usable secp256k1 node ID";
                 case "TCP_CONNECTION_REFUSED" -> "P2P TCP connection refused";
+                case "TCP_NETWORK_UNREACHABLE" -> "Network unreachable from this observer";
+                case "TCP_NO_ROUTE_TO_HOST" -> "No route to this endpoint from this observer";
+                case "TCP_ADDRESS_FAMILY_UNAVAILABLE" -> "Address family unavailable on this observer";
+                case "TCP_LOCAL_ADDRESS_UNAVAILABLE" -> "Local address unavailable on this observer";
                 case "TCP_TIMEOUT" -> "P2P TCP connection timed out";
                 default -> reasonCode.replace('_', ' ').toLowerCase(java.util.Locale.ROOT);
             };

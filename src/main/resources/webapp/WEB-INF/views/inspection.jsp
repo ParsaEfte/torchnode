@@ -21,7 +21,7 @@
         :root{color-scheme:dark;--bg:#080b12;--panel:#111722;--line:#263044;--muted:#8792a7;--text:#eef3fb;--cyan:#42d9d0;--green:#74e39a;--red:#ff7e8c;--amber:#f4bd62}
         *{box-sizing:border-box} body{margin:0;min-height:100vh;background:radial-gradient(circle at 85% -10%,#123c49 0,transparent 30%),var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
         .shell{width:min(1280px,calc(100% - 40px));margin:auto;padding:32px 0 60px}.top{display:flex;justify-content:space-between;gap:20px;align-items:start;margin-bottom:20px}
-        .eyebrow,.source{color:var(--cyan);font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}h1{font:700 clamp(27px,4vw,44px)/1.05 ui-monospace,SFMono-Regular,Menlo,monospace;margin:5px 0 10px;letter-spacing:-.05em}
+        .eyebrow,.source{color:var(--cyan);font-size:10px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}h1{font:700 clamp(27px,4vw,44px)/1.05 ui-monospace,SFMono-Regular,Menlo,monospace;margin:5px 0 10px;letter-spacing:-.05em;overflow-wrap:anywhere}
         .status{display:flex;align-items:center;gap:9px;color:var(--muted)}.dot{width:8px;height:8px;border-radius:50%;background:currentColor}.back{color:var(--muted);text-decoration:none;border:1px solid var(--line);padding:8px 11px;border-radius:8px}
         .summary,.card{border:1px solid var(--line);background:#111722d9;backdrop-filter:blur(12px);border-radius:14px}.summary{padding:18px;display:flex;flex-wrap:wrap;gap:22px;margin-bottom:14px}.metric{min-width:125px}.label{color:var(--muted);font-size:10px;letter-spacing:.1em;text-transform:uppercase}.metric strong{display:block;margin-top:3px;font-size:15px}
         .badges{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 22px}.badge,.source,.state{display:inline-flex;align-items:center;border:1px solid #334057;border-radius:999px;padding:3px 8px;color:var(--muted)}.badge.confirmed,.pass{color:var(--green);border-color:#2d6541;background:#11291b}.failed,.timeout{color:var(--red);border-color:#66323b;background:#2b171d}.checking{color:var(--cyan)}
@@ -204,7 +204,7 @@ function render(data) {
         row(identity, 'ENR provenance', enrEvidence.provenance, 'ENR', true);
         const fields = enr.fields || {};
         [['Advertised IPv4', 'ip'], ['Advertised TCP', 'tcp'], ['Advertised UDP', 'udp'],
-         ['Advertised IPv6 (passive)', 'ip6'], ['Advertised TCP6', 'tcp6'], ['Advertised UDP6', 'udp6']]
+         ['Advertised IPv6', 'ip6'], ['Advertised TCP6', 'tcp6'], ['Advertised UDP6', 'udp6']]
             .forEach(([label, key]) => { if (available(fields[key])) row(identity, label, fields[key], 'ENR'); });
         if (fields.eth) row(identity, 'ENR fork ID', fields.eth.forkHash + ' / ' + fields.eth.forkNext, 'ENR', true);
         const unknown = (enr.entries || []).filter(entry => !entry.known);
@@ -225,6 +225,8 @@ function render(data) {
 
     const p2p = el('p2p'); p2p.replaceChildren();
     const hello = data.p2p && data.p2p.hello, eth = data.p2p && data.p2p.status;
+    (data.endpointObservations || []).forEach(o => row(p2p, o.source + ' endpoint evidence', JSON.stringify(o.endpoints) + ' — ' + o.provenance, o.source, true, true));
+    (data.endpointAttempts || []).forEach(a => row(p2p, a.addressFamily + ' attempt ' + a.endpoint, JSON.stringify(a.diagnostics), 'Scanner', true, true));
     row(p2p, 'Discovery', node.discovery, 'Discovery'); row(p2p, 'P2P TCP endpoint', node.p2pEndpoint, 'Discovery', true);
     row(p2p, 'RLPx Auth', diagnosticByName(data, 'RLPx Auth').state.replace('_', ' '), 'RLPx');
     row(p2p, 'RLPx Hello', diagnosticByName(data, 'RLPx Hello').state.replace('_', ' '), 'RLPx');

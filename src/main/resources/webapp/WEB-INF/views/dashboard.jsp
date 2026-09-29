@@ -87,6 +87,7 @@
         th { padding:12px 16px; text-align:left; color:var(--muted); font-size:10px; letter-spacing:.1em; text-transform:uppercase; }
         td { padding:14px 16px; border-top:1px solid #20293a; white-space:nowrap; }
         tbody tr:hover { background:#18202e; }
+        td.endpoint { white-space:normal; overflow-wrap:anywhere; max-width:220px; }
         .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
         .muted { color:var(--muted); } .good { color:var(--green); } .warn { color:var(--amber); }
         .badge { display:inline-flex; border:1px solid #334057; border-radius:999px; padding:3px 8px; font-size:11px; }
@@ -189,7 +190,7 @@
             <tbody>
             <% for (NodeRecord node : nodes) { %>
                 <tr>
-                    <td class="mono"><%= h(node.getIp()) %>:<%= node.getUdpPort() %></td>
+                    <td class="mono endpoint"><%= h(io.github.gavinruff007.torchnode.model.EndpointAddress.hostPort(node.getIp(), node.getUdpPort())) %></td>
                     <td class="mono muted" title="<%= h(node.getNodeId()) %>"><%= shortId(node.getNodeId()) %></td>
                     <td><span class="badge"><%= h(node.getNodeType()) %></span></td>
                     <td class="client-cell" title="<%= h(node.getClientVersion()) %>"><%= h(node.getClientVersion()) %></td>

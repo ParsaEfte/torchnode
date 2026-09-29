@@ -8,7 +8,7 @@ import java.time.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Bounded IPv4-only EIP-868 exchange on isolated sockets, independent from scanner packet reception. */
+/** Bounded dual-stack EIP-868 exchange on isolated sockets, independent from scanner packet reception. */
 public final class Discv4EnrClient implements AutoCloseable {
     public static final Duration TIMEOUT = Duration.ofSeconds(6);
     private final ECKeyPair key;
@@ -29,31 +29,23 @@ public final class Discv4EnrClient implements AutoCloseable {
     public EnrEvidence fetch(NodeRecord node) { return fetch(node, () -> false); }
     EnrEvidence fetch(NodeRecord node, java.util.function.BooleanSupplier cancelled) {
         long startedGeneration = generation.get();
-        String provenance = "discv4 ENRRequest/ENRResponse at " + node.getIp() + ":" + node.getUdpPort();
+        String provenance = "discv4 ENRRequest/ENRResponse at " + EndpointAddress.hostPort(node.getIp(), node.getUdpPort());
         if (closed || cancelled.getAsBoolean() || startedGeneration != generation.get() || Thread.currentThread().isInterrupted()) return failure(node, provenance, "CANCELLED", "ENR acquisition cancelled");
-        // No DNS resolution and no IPv6 network activity, including for legacy/manual records.
-        if (!node.getIp().matches("[0-9]{1,3}(\\.[0-9]{1,3}){3}") || node.getUdpPort() <= 0 || !node.identity().available())
-            return failure(node, provenance, "NO_DISCOVERY_ENDPOINT", "An IPv4 discovery endpoint and public-key identity are required");
+        if (node.getUdpPort() <= 0 || !node.identity().available())
+            return failure(node, provenance, "NO_DISCOVERY_ENDPOINT", "A discovery endpoint and public-key identity are required");
         DatagramSocket socket = null;
         boolean pong = false, requestSent = false;
         String rejected = null;
         long deadline = System.nanoTime() + timeout.toNanos();
         try {
-            String[] octets = node.getIp().split("\\.");
-            byte[] ipv4 = new byte[4];
-            for (int i = 0; i < 4; i++) {
-                int value = Integer.parseInt(octets[i]);
-                if (value > 255) return failure(node, provenance, "NO_IPV4_ENDPOINT", "Invalid IPv4 address");
-                ipv4[i] = (byte)value;
-            }
-            InetAddress address = InetAddress.getByAddress(ipv4);
-            if (!(address instanceof Inet4Address)) return failure(node, provenance, "NO_IPV4_ENDPOINT", "IPv6 acquisition is disabled");
+            InetAddress address = EndpointAddress.parse(node.getIp());
             InetSocketAddress remote = new InetSocketAddress(address, node.getUdpPort());
-            socket = new DatagramSocket(new InetSocketAddress(InetAddress.getByAddress(new byte[4]), 0));
+            byte[] unspecified = new byte[address.getAddress().length];
+            socket = new DatagramSocket(new InetSocketAddress(InetAddress.getByAddress(unspecified), 0));
             active.add(socket);
             if (closed || cancelled.getAsBoolean() || startedGeneration != generation.get()) return failure(node, provenance, "CANCELLED", "ENR acquisition cancelled");
             long expiration = Instant.now().getEpochSecond() + 20;
-            RlpList from = endpoint(new byte[4], socket.getLocalPort());
+            RlpList from = endpoint(unspecified, socket.getLocalPort());
             RlpList to = endpoint(address.getAddress(), node.getUdpPort());
             byte[] ping = Discv4Packet.encode(1, RlpEncoder.encode(new RlpList(RlpString.create(4), from, to, RlpString.create(expiration))), key);
             byte[] request = Discv4Packet.encode(5, RlpEncoder.encode(new RlpList(RlpString.create(expiration))), key);

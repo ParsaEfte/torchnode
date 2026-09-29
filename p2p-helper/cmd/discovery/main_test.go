@@ -136,7 +136,7 @@ func TestHelperSharesSuppliedIdentityAndDiscoversBeyondBootstrap(t *testing.T) {
 		t.Fatal("shutdown leak")
 	}
 }
-func TestGuardRejectsOversizedUndersizedReplayAndIpv6(t *testing.T) {
+func TestIPv4GuardRejectsOversizedUndersizedReplayAndWrongSocketFamily(t *testing.T) {
 	conn, _ := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	defer conn.Close()
 	guard := &guardedConn{UDPConn: conn, replay: make(map[[32]byte]int64)}
@@ -157,7 +157,7 @@ func TestGuardRejectsOversizedUndersizedReplayAndIpv6(t *testing.T) {
 		t.Fatal("replay accepted", n, err)
 	}
 	if _, err = guard.WriteToUDPAddrPort(buf[:64], netip.MustParseAddrPort("[::1]:9000")); err == nil {
-		t.Fatal("IPv6 send enabled")
+		t.Fatal("IPv4-only socket unexpectedly sent to native IPv6")
 	}
 	if len(guard.replay) > 4096 {
 		t.Fatal("unbounded replay state")

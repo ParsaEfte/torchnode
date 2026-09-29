@@ -1,7 +1,7 @@
 package main
 
 // The upstream Node prefers a more global IPv6 address over a private IPv4 address.
-// This narrow request adapter selects the signed ENR's IPv4 tuple explicitly while
+// This bounded request adapter selects a signed ENR family tuple explicitly while
 // delegating ALL packet/handshake/session cryptography to geth's public v5wire.Codec.
 import (
 	"context"
@@ -28,27 +28,65 @@ func ipv4Endpoint(n *enode.Node) (netip.AddrPort, bool) {
 	return netip.AddrPortFrom(netip.Addr(ip), uint16(port)), true
 }
 
-type ipv4Client struct {
+func ipv6Endpoint(n *enode.Node) (netip.AddrPort, bool) {
+	var ip enr.IPv6
+	var port enr.UDP6
+	if n.Load(&ip) != nil {
+		return netip.AddrPort{}, false
+	}
+	addr, ok := netip.AddrFromSlice(net.IP(ip))
+	if err := n.Load(&port); err != nil {
+		if !enr.IsNotFound(err) {
+			return netip.AddrPort{}, false
+		}
+		var fallback enr.UDP
+		if n.Load(&fallback) != nil {
+			return netip.AddrPort{}, false
+		}
+		port = enr.UDP6(fallback)
+	}
+	if !ok || !addr.Is6() || addr.Is4In6() || addr.IsUnspecified() || addr.IsMulticast() || addr.Zone() != "" || port == 0 {
+		return netip.AddrPort{}, false
+	}
+	return netip.AddrPortFrom(addr, uint16(port)), true
+}
+func (c *endpointClient) endpoint(n *enode.Node) (netip.AddrPort, bool) {
+	if c.ipv6 {
+		return ipv6Endpoint(n)
+	}
+	return ipv4Endpoint(n)
+}
+
+type endpointClient struct {
+	ipv6  bool
+	sink  *sink
 	local *enode.LocalNode
 	conn  *guardedConn
 	codec *v5wire.Codec
 }
 
-func newIPv4Client(ln *enode.LocalNode, key *ecdsa.PrivateKey) (*ipv4Client, error) {
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero})
+func newIPv4Client(ln *enode.LocalNode, key *ecdsa.PrivateKey) (*endpointClient, error) {
+	return newFamilyClient(ln, key, false)
+}
+func newFamilyClient(ln *enode.LocalNode, key *ecdsa.PrivateKey, ipv6 bool) (*endpointClient, error) {
+	network, ip := "udp4", net.IPv4zero
+	if ipv6 {
+		network, ip = "udp6", net.IPv6zero
+	}
+	conn, err := net.ListenUDP(network, &net.UDPAddr{IP: ip})
 	if err != nil {
 		return nil, err
 	}
-	return &ipv4Client{ln, &guardedConn{UDPConn: conn, replay: make(map[[32]byte]int64)}, v5wire.NewCodec(ln, key, mclock.System{}, nil)}, nil
+	return &endpointClient{ipv6, nil, ln, &guardedConn{UDPConn: conn, replay: make(map[[32]byte]int64)}, v5wire.NewCodec(ln, key, mclock.System{}, nil)}, nil
 }
-func (c *ipv4Client) close() { c.conn.Close() }
-func (c *ipv4Client) request(ctx context.Context, n *enode.Node, p v5wire.Packet, wanted byte) ([]v5wire.Packet, error) {
+func (c *endpointClient) close() { c.conn.Close() }
+func (c *endpointClient) request(ctx context.Context, n *enode.Node, p v5wire.Packet, wanted byte) ([]v5wire.Packet, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	addr, ok := ipv4Endpoint(n)
+	addr, ok := c.endpoint(n)
 	if !ok {
-		return nil, errors.New("no advertised IPv4 endpoint")
+		return nil, errors.New("no advertised endpoint for selected family")
 	}
 	wire, nonce, err := c.codec.Encode(n.ID(), addr.String(), p, nil)
 	if err != nil {
@@ -86,6 +124,9 @@ func (c *ipv4Client) request(ctx context.Context, n *enode.Node, p v5wire.Packet
 				continue
 			}
 			challengeSeen = true
+			if c.sink != nil {
+				c.sink.diagnostic("WHOAREYOU_RECEIVED", addr.String())
+			}
 			challenge.Node = n
 			wire, _, err = c.codec.Encode(n.ID(), addr.String(), p, challenge)
 			if err != nil {
@@ -150,10 +191,13 @@ func (c *ipv4Client) request(ctx context.Context, n *enode.Node, p v5wire.Packet
 		}
 		replies = append(replies, packet)
 		if len(replies) >= total {
+			if c.sink != nil {
+				c.sink.diagnostic("AUTHENTICATED_RESPONSE", addr.String())
+			}
 			return replies, nil
 		}
 	}
-	return replies, errors.New("IPv4 request timeout")
+	return replies, errors.New("endpoint request timeout")
 }
 func equalID(a, b []byte) bool {
 	if len(a) != len(b) {
@@ -167,7 +211,7 @@ func equalID(a, b []byte) bool {
 	return true
 }
 func requestID() []byte { id := make([]byte, 8); rand.Read(id); return id }
-func (c *ipv4Client) ping(ctx context.Context, n *enode.Node, seq uint64) error {
+func (c *endpointClient) ping(ctx context.Context, n *enode.Node, seq uint64) error {
 	replies, err := c.request(ctx, n, &v5wire.Ping{ReqID: requestID(), ENRSeq: seq}, v5wire.PongMsg)
 	if err != nil {
 		return err
@@ -178,7 +222,7 @@ func (c *ipv4Client) ping(ctx context.Context, n *enode.Node, seq uint64) error 
 	}
 	return nil
 }
-func (c *ipv4Client) findnode(ctx context.Context, n *enode.Node, distances []uint) ([]*enode.Node, error) {
+func (c *endpointClient) findnode(ctx context.Context, n *enode.Node, distances []uint) ([]*enode.Node, error) {
 	for _, d := range distances {
 		if d > 256 {
 			return nil, errors.New("invalid distance")
@@ -191,7 +235,7 @@ func (c *ipv4Client) findnode(ctx context.Context, n *enode.Node, distances []ui
 	for _, d := range distances {
 		allowed[d] = true
 	}
-	from, _ := ipv4Endpoint(n)
+	from, _ := c.endpoint(n)
 	for _, reply := range replies {
 		for _, r := range reply.(*v5wire.Nodes).Nodes {
 			candidate, validation := enode.New(enode.ValidSchemes, r)
@@ -201,7 +245,7 @@ func (c *ipv4Client) findnode(ctx context.Context, n *enode.Node, distances []ui
 			if seen[candidate.ID()] || !allowed[uint(enode.LogDist(n.ID(), candidate.ID()))] {
 				continue
 			}
-			ep, ok := ipv4Endpoint(candidate)
+			ep, ok := c.endpoint(candidate)
 			if ok && netutil.CheckRelayAddr(from.Addr(), ep.Addr()) != nil {
 				continue
 			}

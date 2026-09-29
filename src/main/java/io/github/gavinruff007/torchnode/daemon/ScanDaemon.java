@@ -14,7 +14,7 @@ import java.util.concurrent.*;
 public class ScanDaemon {
     private static final int INSPECT_BATCH_SIZE = 50;
     private static final int INSPECT_TIMEOUT_SECONDS = 10;
-    private final NodeInspector nodeInspector = new NodeInspector();
+    private NodeInspector nodeInspector;
     private final String databasePath;
 
 
@@ -37,6 +37,7 @@ public class ScanDaemon {
 
         NodeStore nodeStore = new SqliteNodeStore(databasePath);
         this.provider = provider;
+        this.nodeInspector = new NodeInspector();
         this.enrAcquirer = new EnrAcquirer();
         running = true;
 
@@ -78,6 +79,7 @@ public class ScanDaemon {
             } finally {
                 running = false;
                 provider.close();
+                nodeInspector.close();
                 enrAcquirer.close();
                 boolean interrupted = false;
                 if (inspectionThread != null) {
@@ -132,13 +134,11 @@ public class ScanDaemon {
                 CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                     String key = node.getKey() + ":tcp=" + node.getP2pEndpoint().port();
                     try {
-                        NodeRecord inspected = nodeInspector.inspect(node).get(INSPECT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                        NodeRecord inspected = nodeInspector.inspect(node, System.nanoTime() + TimeUnit.SECONDS.toNanos(INSPECT_TIMEOUT_SECONDS));
                         nodeStore.update(inspected);
                         inspectedNodes.add(key);
                         System.out.println("[Inspect] Success: " + key);
-                    } catch (TimeoutException e) {
-                        System.out.println("[Inspect] Timeout: " + key);
-                        inspectedNodes.add(key);
+
                     } catch (Exception e) {
                         System.err.println("[Inspect] Failed: " + key + " - " + e.getMessage());
                         inspectedNodes.add(key);
@@ -174,6 +174,7 @@ public class ScanDaemon {
 
     public void stop() {
         running = false;
+        if (nodeInspector != null) nodeInspector.close();
         if (provider != null) provider.close();
         if (enrAcquirer != null) enrAcquirer.close();
         if (scanThread != null) {

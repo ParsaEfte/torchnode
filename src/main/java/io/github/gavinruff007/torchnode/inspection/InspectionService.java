@@ -1,6 +1,7 @@
 package io.github.gavinruff007.torchnode.inspection;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.gavinruff007.torchnode.model.EndpointAddress;
+
 import io.github.gavinruff007.torchnode.enr.EnrAcquirer;
 import io.github.gavinruff007.torchnode.model.NodeRecord;
 import io.github.gavinruff007.torchnode.model.NodeType;
@@ -27,7 +28,6 @@ public class InspectionService implements AutoCloseable {
     private static final int CONNECT_TIMEOUT_MS = 3_000;
     private static final int[] RPC_PORTS = {8545, 8546, 30303};
     private static final int[] BEACON_PORTS = {5052, 5051, 9000};
-    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final String databasePath;
     private final RpcProber rpcProber = new RpcProber();
@@ -38,6 +38,8 @@ public class InspectionService implements AutoCloseable {
     private final Map<String, InspectionResult> results = new ConcurrentHashMap<>();
     private final Object persistenceLock = new Object();
     private long generation;
+    private volatile boolean closed;
+    private final java.util.Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
 
     public InspectionService(String databasePath) {
         this.databasePath = databasePath;
@@ -45,6 +47,7 @@ public class InspectionService implements AutoCloseable {
 
     public String inspect(NodeRecord node) {
         synchronized (persistenceLock) {
+            if (closed) throw new IllegalStateException("Inspection service closed");
             prune();
             String id = UUID.randomUUID().toString();
             InspectionResult result = new InspectionResult(id, node);
@@ -65,9 +68,18 @@ public class InspectionService implements AutoCloseable {
                 enr = CompletableFuture.completedFuture(null);
             } else enr = enrAcquirer.acquire(node).thenAccept(result::setEnrEvidence);
 
-            CompletableFuture<Void> tcp = CompletableFuture.runAsync(() -> inspectP2p(result), executor);
-            CompletableFuture<Void> rpc = CompletableFuture.runAsync(() -> inspectRpc(result), executor);
-            CompletableFuture<Void> beacon = CompletableFuture.runAsync(() -> inspectBeacon(result), executor);
+            enr = enr.handle((ignored, error) -> null).thenRun(() -> {
+                var saved = result.selectedEnr();
+                if (saved != null && saved.usable() && saved.associatedIdentity().equals(node.identity())) {
+                    var observations = new ArrayList<>(node.getObservations());
+                    var claim = saved.observation().orElseThrow();
+                    if (!observations.contains(claim)) observations.add(claim);
+                    node.setObservations(observations);
+                }
+            });
+            CompletableFuture<Void> tcp = enr.thenRunAsync(() -> inspectP2p(result), executor);
+            CompletableFuture<Void> rpc = enr.thenRunAsync(() -> inspectRpc(result), executor);
+            CompletableFuture<Void> beacon = enr.thenRunAsync(() -> inspectBeacon(result), executor);
             long startedGeneration = generation;
             CompletableFuture.allOf(tcp, rpc, beacon, enr).whenComplete(
                     (ignored, error) -> finish(result, error, startedGeneration));
@@ -97,8 +109,10 @@ public class InspectionService implements AutoCloseable {
             return;
         }
         long started = System.nanoTime();
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(node.getP2pEndpoint().address(), node.getP2pEndpoint().port()), CONNECT_TIMEOUT_MS);
+        Socket socket = new Socket(); activeSockets.add(socket);
+        try (socket) {
+            if (closed || Thread.currentThread().isInterrupted()) throw new java.io.InterruptedIOException("Inspection cancelled");
+            socket.connect(EndpointAddress.socket(node.getP2pEndpoint().address(), node.getP2pEndpoint().port()), CONNECT_TIMEOUT_MS);
             long duration = elapsedMs(started);
             node.setP2pConnectMs(duration);
             result.diagnostic("P2P TCP", InspectionResult.State.PASS, duration, null, "Scanner");
@@ -109,16 +123,34 @@ public class InspectionService implements AutoCloseable {
             result.event("TCP connection timed out", null);
         } catch (ConnectException e) {
             result.diagnostic("P2P TCP", InspectionResult.State.FAILED, null,
-                    "Connection refused from scanner", "Scanner");
-            result.event("TCP connection refused", null);
+                    concise(e), "Scanner");
+            result.event("TCP connection failed", concise(e));
         } catch (Exception e) {
             result.diagnostic("P2P TCP", InspectionResult.State.FAILED, null,
                     concise(e), "Scanner");
             result.event("TCP connection failed", concise(e));
-        }
+        } finally { activeSockets.remove(socket); }
     }
 
     private void inspectP2p(InspectionResult result) {
+        var original = result.node().getP2pEndpoint();
+        try {
+            var endpoints = result.node().p2pEndpoints();
+            if (endpoints.isEmpty()) {
+                result.diagnostic("P2P TCP", InspectionResult.State.UNAVAILABLE, null, "No usable advertised P2P endpoint", "Discovery");
+                return;
+            }
+            for (var endpoint : endpoints) {
+                if (closed || Thread.currentThread().isInterrupted()) break;
+                result.node().selectEndpoint(endpoint);
+                result.resetP2p();
+                inspectP2pEndpoint(result);
+                result.endpointAttempt(endpoint);
+            }
+        } finally { result.node().selectEndpoint(original); result.summarizeEndpointAttempts(); }
+    }
+
+    private void inspectP2pEndpoint(InspectionResult result) {
         if (result.node().getP2pEndpoint().port() <= 0) {
             inspectTcp(result);
             result.diagnostic("RLPx Auth", InspectionResult.State.NOT_TESTED, null,
@@ -177,12 +209,13 @@ public class InspectionService implements AutoCloseable {
         List<String> attempted = new ArrayList<>();
         boolean endpointOpen = false;
         String lastError = null;
-        for (int port : RPC_PORTS) {
-            attempted.add("http://" + result.node().getIp() + ":" + port);
+        for (String ip : probeAddresses(result.node())) for (int port : RPC_PORTS) {
+            if (closed || Thread.currentThread().isInterrupted()) return;
+            attempted.add(EndpointAddress.http(ip, port));
             result.setRpcProbeEndpoints(attempted);
-            if (!tcpOpen(result.node().getIp(), port, 800)) continue;
+            if (!tcpOpen(ip, port, 800)) continue;
             endpointOpen = true;
-            RpcProber.RpcInfo info = rpcProber.probeDetailed(result.node().getIp(), port);
+            RpcProber.RpcInfo info = rpcProber.probeDetailed(ip, port);
             if (info.reachable) {
                 NodeRecord node = result.node();
                 node.setRpcAvailable(true);
@@ -190,9 +223,9 @@ public class InspectionService implements AutoCloseable {
                 node.setSyncing(info.syncing);
                 node.setBlockNumber(info.blockNumber);
                 node.setPendingTransactions(info.pendingTxCount);
-                result.setRpc(rpcMap(info, node.getIp()));
+                result.setRpc(rpcMap(info, ip));
                 result.diagnostic("JSON-RPC", InspectionResult.State.PASS, info.responseMs, null, "RPC");
-                result.event("JSON-RPC detected", node.getIp() + ":" + port);
+                result.event("JSON-RPC detected", EndpointAddress.hostPort(ip, port));
                 if (info.clientVersion != null) result.event("Client identified", info.clientVersion);
                 return;
             }
@@ -209,18 +242,19 @@ public class InspectionService implements AutoCloseable {
         List<String> attempted = new ArrayList<>();
         boolean endpointOpen = false;
         String lastError = null;
-        for (int port : BEACON_PORTS) {
-            attempted.add("http://" + result.node().getIp() + ":" + port);
+        for (String ip : probeAddresses(result.node())) for (int port : BEACON_PORTS) {
+            if (closed || Thread.currentThread().isInterrupted()) return;
+            attempted.add(EndpointAddress.http(ip, port));
             result.setBeaconProbeEndpoints(attempted);
-            if (!tcpOpen(result.node().getIp(), port, 800)) continue;
+            if (!tcpOpen(ip, port, 800)) continue;
             endpointOpen = true;
-            BeaconProber.BeaconInfo info = beaconProber.probeDetailed(result.node().getIp(), port);
+            BeaconProber.BeaconInfo info = beaconProber.probeDetailed(ip, port);
             if (info.reachable) {
                 NodeRecord node = result.node();
                 node.setBeaconAvailable(true);
-                result.setBeacon(beaconMap(info));
+                var evidence = beaconMap(info); evidence.put("endpoint", EndpointAddress.http(ip, port)); result.setBeacon(evidence);
                 result.diagnostic("Beacon API", InspectionResult.State.PASS, info.responseMs, null, "Beacon");
-                result.event("Beacon API detected", node.getIp() + ":" + port);
+                result.event("Beacon API detected", EndpointAddress.hostPort(ip, port));
                 return;
             }
             lastError = info.error;
@@ -244,12 +278,11 @@ public class InspectionService implements AutoCloseable {
                 store.update(node);
                 if (store instanceof SqliteNodeStore sqlite && result.enrEvidence() != null)
                     sqlite.saveEnrEvidence(result.enrEvidence());
-                if (store instanceof SqliteNodeStore sqlite && result.p2p() != null &&
-                        (result.p2p().get("hello") != null || result.p2p().get("status") != null)) {
-                    Map<String, Object> p2p = result.p2p();
-                    sqlite.saveP2pObservation(node.getKey(),
-                            p2p.get("hello") == null ? null : JSON.writeValueAsString(p2p.get("hello")),
-                            p2p.get("status") == null ? null : JSON.writeValueAsString(p2p.get("status")));
+                if (store instanceof SqliteNodeStore sqlite && !result.endpointAttempts().isEmpty()) {
+                    var p2p = result.p2p();
+                    @SuppressWarnings("unchecked") Map<String,Object> hello = p2p == null ? null : (Map<String,Object>)p2p.get("hello");
+                    @SuppressWarnings("unchecked") Map<String,Object> status = p2p == null ? null : (Map<String,Object>)p2p.get("status");
+                    sqlite.saveEndpointInspection(node.getKey(), hello, status, result.endpointAttempts());
                 }
             } catch (Exception e) {
                 result.event("Database update failed", concise(e));
@@ -260,7 +293,7 @@ public class InspectionService implements AutoCloseable {
 
     private Map<String, Object> rpcMap(RpcProber.RpcInfo info, String ip) {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("endpoint", "http://" + ip + ":" + info.port);
+        map.put("endpoint", EndpointAddress.http(ip, info.port));
         map.put("port", info.port);
         map.put("responseMs", info.responseMs);
         map.put("clientVersion", info.clientVersion);
@@ -300,13 +333,22 @@ public class InspectionService implements AutoCloseable {
         };
     }
 
+    private List<String> probeAddresses(NodeRecord node) {
+        var addresses = new ArrayList<String>(); addresses.add(node.getIp());
+        node.getObservations().stream().flatMap(o -> o.endpoints().stream()).map(e -> e.address()).forEach(addresses::add);
+        return java.util.Arrays.stream(io.github.gavinruff007.torchnode.model.NodeEndpoint.AddressFamily.values())
+            .flatMap(family -> addresses.stream().map(ip -> EndpointAddress.parse(ip).getHostAddress()).distinct().filter(EndpointAddress::activeTarget).filter(ip -> EndpointAddress.family(ip) == family).limit(2)).toList();
+    }
+
     private boolean tcpOpen(String ip, int port, int timeoutMs) {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(ip, port), timeoutMs);
+        Socket socket = new Socket(); activeSockets.add(socket);
+        try (socket) {
+            if (closed || Thread.currentThread().isInterrupted()) return false;
+            socket.connect(EndpointAddress.socket(ip, port), timeoutMs);
             return true;
         } catch (Exception e) {
             return false;
-        }
+        } finally { activeSockets.remove(socket); }
     }
 
     private long elapsedMs(long started) { return (System.nanoTime() - started) / 1_000_000; }
@@ -326,5 +368,17 @@ public class InspectionService implements AutoCloseable {
     }
 
     @Override
-    public void close() { executor.shutdownNow(); enrAcquirer.close(); }
+    public void close() {
+        synchronized (persistenceLock) { closed = true; generation++; }
+        enrAcquirer.close(); executor.shutdownNow();
+        activeSockets.forEach(socket -> { try { socket.close(); } catch (java.io.IOException ignored) {} });
+        rpcProber.close(); beaconProber.close();
+        boolean interrupted = false;
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        while (!executor.isTerminated() && System.nanoTime() < deadline) {
+            try { executor.awaitTermination(100, java.util.concurrent.TimeUnit.MILLISECONDS); }
+            catch (InterruptedException e) { interrupted = true; }
+        }
+        if (interrupted) Thread.currentThread().interrupt();
+    }
 }

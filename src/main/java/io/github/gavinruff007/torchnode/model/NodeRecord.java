@@ -34,7 +34,7 @@ public class NodeRecord {
     }
     
     public String getKey() {
-        return identity().available() ? nodeId + "@" + ip + ":" + udpPort : ip + ":" + udpPort;
+        return identity().available() ? nodeId + "@" + EndpointAddress.hostPort(ip, udpPort) : EndpointAddress.hostPort(ip, udpPort);
     }
     
     public NodeRecord(DiscoveryObservation observation) {
@@ -48,6 +48,16 @@ public class NodeRecord {
         this.p2pEndpoint = observation.endpoints().stream().filter(e -> e.purpose() == NodeEndpoint.Purpose.P2P && e.transport() == NodeEndpoint.Transport.TCP).findFirst().orElse(null);
     }
 
+    public List<NodeEndpoint> p2pEndpoints() {
+        var allEndpoints = observations.stream().flatMap(o -> o.endpoints().stream())
+            .filter(e -> e.purpose() == NodeEndpoint.Purpose.P2P && e.transport() == NodeEndpoint.Transport.TCP && e.port() > 0 && EndpointAddress.activeTarget(e.address()))
+            .distinct().toList();
+        var endpoints = java.util.Arrays.stream(NodeEndpoint.AddressFamily.values()).flatMap(family ->
+            allEndpoints.stream().filter(e -> e.addressFamily() == family).limit(4)).toList();
+        return endpoints.isEmpty() && getP2pEndpoint().port() > 0 && EndpointAddress.activeTarget(getP2pEndpoint().address())
+            ? List.of(getP2pEndpoint()) : endpoints;
+    }
+    public void selectEndpoint(NodeEndpoint endpoint) { p2pEndpoint = endpoint; }
     public NodeIdentity identity() { return new NodeIdentity(nodeId); }
     public String getDiscoverySource() { return discoverySource; }
     public void setDiscoverySource(String source) { this.discoverySource = source; }
@@ -61,7 +71,7 @@ public class NodeRecord {
     /** Selected discovery claim only; authenticated Hello never mutates it. */
     public NodeEndpoint getP2pEndpoint() {
         return p2pEndpoint != null ? p2pEndpoint : new NodeEndpoint(ip, NodeEndpoint.Transport.TCP, tcpPort,
-                ip.contains(":") ? NodeEndpoint.AddressFamily.IPV6 : NodeEndpoint.AddressFamily.IPV4,
+                EndpointAddress.family(ip),
                 NodeEndpoint.Purpose.P2P);
     }
 

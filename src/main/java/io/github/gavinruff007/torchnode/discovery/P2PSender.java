@@ -1,5 +1,7 @@
 package io.github.gavinruff007.torchnode.discovery;
 
+import io.github.gavinruff007.torchnode.model.EndpointAddress;
+
 import org.bouncycastle.jcajce.provider.digest.Keccak;
 import org.web3j.crypto.ECKeyPair;
 import org.web3j.crypto.Sign;
@@ -25,8 +27,10 @@ public class P2PSender {
         InetAddress targetAddr = InetAddress.getByName(targetIP);
 
         // Get public IP
-        String publicIP = getPublicIP();
-        byte[] fromIPBytes = InetAddress.getByName(publicIP).getAddress();
+        String publicIP = targetAddr instanceof java.net.Inet6Address ? socket.getLocalAddress().getHostAddress() : getPublicIP();
+        byte[] fromIPBytes = targetAddr instanceof java.net.Inet6Address
+            ? socket.getLocalAddress().getAddress() : InetAddress.getByName(publicIP).getAddress();
+        if (targetAddr instanceof java.net.Inet6Address && fromIPBytes.length != 16) fromIPBytes = new byte[16];
 
         // From endpoint (with public IP)
         List<RlpType> fromEndpoint = new ArrayList<>();
@@ -54,7 +58,7 @@ public class P2PSender {
         DatagramPacket udpPacket = new DatagramPacket(packet, packet.length, targetAddr, targetPort);
         socket.send(udpPacket);
 
-        System.out.println("Sending Ping to " + targetIP + ":" + targetPort + " (our public IP: " + publicIP + ")");
+        System.out.println("Sending Ping to " + EndpointAddress.hostPort(targetIP, targetPort) + " (our public IP: " + publicIP + ")");
     }
 
     public static void sendPong(LocalNodeIdentity myNode, String targetIP, int targetPort,
@@ -80,7 +84,7 @@ public class P2PSender {
         DatagramPacket udpPacket = new DatagramPacket(packet, packet.length, targetAddr, targetPort);
         socket.send(udpPacket);
 
-        System.out.println("✅ Pong sent to " + targetIP + ":" + targetPort);
+        System.out.println("✅ Pong sent to " + EndpointAddress.hostPort(targetIP, targetPort));
     }
 
     private static byte[] buildPacket(byte packetType, byte[] payload, ECKeyPair keyPair) throws Exception {
@@ -124,7 +128,9 @@ public class P2PSender {
 
         try {
             URL whatismyip = new URL("https://checkip.amazonaws.com");
-            BufferedReader in = new BufferedReader(new InputStreamReader(whatismyip.openStream()));
+            var connection = whatismyip.openConnection();
+            connection.setConnectTimeout(2000); connection.setReadTimeout(2000);
+            BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
             cachedPublicIP = in.readLine().trim();
             in.close();
             return cachedPublicIP;

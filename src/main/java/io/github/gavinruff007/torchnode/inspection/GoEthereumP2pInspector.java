@@ -89,6 +89,11 @@ public final class GoEthereumP2pInspector {
         } finally {
             if (process != null) {
                 process.destroyForcibly();
+                boolean interrupted = Thread.interrupted();
+                try {
+                    while (process.isAlive()) try { process.waitFor(); }
+                    catch (InterruptedException e) { interrupted = true; }
+                } finally { if (interrupted) Thread.currentThread().interrupt(); }
                 process.getInputStream().close();
                 process.getErrorStream().close();
             }

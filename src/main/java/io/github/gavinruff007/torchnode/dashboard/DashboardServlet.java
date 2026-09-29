@@ -191,7 +191,7 @@ public class DashboardServlet extends HttpServlet {
         response.setHeader("Content-Disposition", "attachment; filename=torchnode-nodes.csv");
         try (NodeStore store = new SqliteNodeStore(databasePath)) {
             var writer = response.getWriter();
-            writer.println("IP,UDP_PORT,TCP_PORT,NODE_ID,TYPE,RPC,BEACON,LATENCY,CLIENT,BLOCK,LAST_SEEN,ENR,ENR_SEQUENCE,ENR_SIGNATURE,ENR_IDENTITY_COMPARISON,DISCOVERY_SOURCE,DISCV5_PROVENANCE");
+            writer.println("IP,UDP_PORT,TCP_PORT,NODE_ID,TYPE,RPC,BEACON,LATENCY,CLIENT,BLOCK,LAST_SEEN,ENR,ENR_SEQUENCE,ENR_SIGNATURE,ENR_IDENTITY_COMPARISON,DISCOVERY_SOURCE,DISCV5_PROVENANCE,ADDRESS_FAMILY,ENDPOINT_OBSERVATIONS_JSON");
             for (NodeRecord node : store.findAll()) {
                 EnrEvidence enr = store instanceof SqliteNodeStore sqlite
                         ? EnrEvidence.latestValidated(sqlite.findEnrEvidence(node.identity())).orElse(null) : null;
@@ -203,7 +203,9 @@ public class DashboardServlet extends HttpServlet {
                         csv(enr == null ? null : enr.record().text()), csv(enr == null ? null : enr.record().sequence()),
                         csv(enr == null ? null : enr.signature()), csv(enr == null ? null : enr.identityComparison()),
                         csv(node.getDiscoverySource()), csv(store.findObservations(node.identity()).stream()
-                            .filter(o -> o.source().equals("discv5")).map(o -> o.observedAt() + " " + o.provenance()).collect(java.util.stream.Collectors.joining(" | ")))));
+                            .filter(o -> o.source().equals("discv5")).map(o -> o.observedAt() + " " + o.provenance()).collect(java.util.stream.Collectors.joining(" | "))),
+                        csv(io.github.gavinruff007.torchnode.model.EndpointAddress.family(node.getIp())),
+                        csv(objectMapper.writeValueAsString(store.findObservations(node.identity()).stream().map(io.github.gavinruff007.torchnode.model.DiscoveryObservation::toMap).toList()))));
             }
         } catch (Exception e) {
             throw new IOException("Unable to export nodes", e);

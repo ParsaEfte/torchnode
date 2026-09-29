@@ -1,5 +1,7 @@
 package io.github.gavinruff007.torchnode.inspection;
 
+import io.github.gavinruff007.torchnode.model.EndpointAddress;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.*;
@@ -9,7 +11,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-public class RpcProber {
+public class RpcProber implements AutoCloseable {
+    private volatile boolean closed;
+    private final java.util.Set<Call> active = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final OkHttpClient client;
     private final ObjectMapper mapper;
     
@@ -43,14 +47,18 @@ public class RpcProber {
     }
 
     public RpcInfo probeDetailed(String ip, int port) {
+        return probeDetailed(ip, port, Long.MAX_VALUE);
+    }
+
+    public RpcInfo probeDetailed(String ip, int port, long deadline) {
         RpcInfo info = new RpcInfo();
         info.port = port;
-        info.clientVersion = textCall(ip, port, "web3_clientVersion", info);
-        String chainId = textCall(ip, port, "eth_chainId", info);
-        String networkId = textCall(ip, port, "net_version", info);
-        String block = textCall(ip, port, "eth_blockNumber", info);
-        String peers = textCall(ip, port, "net_peerCount", info);
-        String syncing = textCall(ip, port, "eth_syncing", info);
+        info.clientVersion = textCall(ip, port, "web3_clientVersion", info, deadline);
+        String chainId = textCall(ip, port, "eth_chainId", info, deadline);
+        String networkId = textCall(ip, port, "net_version", info, deadline);
+        String block = textCall(ip, port, "eth_blockNumber", info, deadline);
+        String peers = textCall(ip, port, "net_peerCount", info, deadline);
+        String syncing = textCall(ip, port, "eth_syncing", info, deadline);
 
         info.chainId = parseQuantity(chainId);
         info.networkId = networkId;
@@ -62,10 +70,10 @@ public class RpcProber {
         return info;
     }
 
-    private String textCall(String ip, int port, String method, RpcInfo info) {
+    private String textCall(String ip, int port, String method, RpcInfo info, long deadline) {
         long started = System.nanoTime();
         try {
-            String result = callRpc(ip, port, method);
+            String result = callRpc(ip, port, method, deadline);
             if (result == null) {
                 info.methodStatus.put(method, "UNAVAILABLE");
                 return null;
@@ -94,8 +102,8 @@ public class RpcProber {
         return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
     }
 
-    private String callRpc(String ip, int port, String method) throws IOException {
-        String url = "http://" + ip + ":" + port;
+    private String callRpc(String ip, int port, String method, long deadline) throws IOException {
+        String url = EndpointAddress.http(ip, port);
         
         String jsonBody = String.format(
             "{\"jsonrpc\":\"2.0\",\"method\":\"%s\",\"params\":[],\"id\":1}",
@@ -112,7 +120,11 @@ public class RpcProber {
             .post(body)
             .build();
         
-        try (Response response = client.newCall(request).execute()) {
+        Call call = client.newCall(request);
+        if (deadline != Long.MAX_VALUE) call.timeout().deadlineNanoTime(deadline);
+        active.add(call);
+        if (closed || Thread.currentThread().isInterrupted() || System.nanoTime() >= deadline) call.cancel();
+        try (Response response = call.execute()) {
             if (!response.isSuccessful()) {
                 throw new IOException("HTTP " + response.code());
             }
@@ -127,7 +139,12 @@ public class RpcProber {
             if (node.has("error")) {
                 throw new IOException(node.path("error").path("message").asText("RPC error"));
             }
-        }
+        } finally { active.remove(call); }
         throw new IOException("Missing JSON-RPC result");
+    }
+    @Override public void close() {
+        closed = true;
+        active.forEach(Call::cancel);
+        client.connectionPool().evictAll();
     }
 }

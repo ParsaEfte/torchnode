@@ -37,7 +37,7 @@ public class FindNodeSender {
         DatagramPacket udpPacket = new DatagramPacket(packet, packet.length, targetAddr, targetPort);
         socket.send(udpPacket);
 
-        System.out.println("📤 FindNode sent to " + targetIP + ":" + targetPort);
+        System.out.println("📤 FindNode sent to " + io.github.gavinruff007.torchnode.model.EndpointAddress.hostPort(targetIP, targetPort));
         System.out.println("   Target: " + Hex.toHexString(targetNodeId));
         System.out.println("[DEBUG] FindNode packet hex: " + Hex.toHexString(packet));
     }

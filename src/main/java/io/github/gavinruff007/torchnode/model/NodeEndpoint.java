@@ -13,6 +13,9 @@ public record NodeEndpoint(String address, Transport transport, int port,
         Objects.requireNonNull(transport);
         Objects.requireNonNull(addressFamily);
         Objects.requireNonNull(purpose);
+        address = EndpointAddress.parse(address).getHostAddress();
+        if (EndpointAddress.family(address) != addressFamily) throw new IllegalArgumentException("Address family mismatch");
         if (port < 0 || port > 65535) throw new IllegalArgumentException("Invalid endpoint port");
     }
+    public String hostPort() { return EndpointAddress.hostPort(address, port); }
 }

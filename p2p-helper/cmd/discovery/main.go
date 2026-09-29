@@ -40,6 +40,7 @@ type event struct {
 	NodeID        string `json:"nodeId,omitempty"`
 	RLP           string `json:"rlp,omitempty"`
 	Endpoint      string `json:"endpoint,omitempty"`
+	AddressFamily string `json:"addressFamily,omitempty"`
 	Provenance    string `json:"provenance,omitempty"`
 	Authenticated bool   `json:"authenticated,omitempty"`
 	Code          string `json:"code,omitempty"`
@@ -63,6 +64,19 @@ func (s *sink) diagnostic(code, detail string) {
 	case s.events <- e:
 	default:
 	} // Transport must not block on verbose diagnostics.
+}
+
+func (s *sink) endpointDiagnostic(code string, endpoint netip.AddrPort, detail string) {
+	family := "IPV4"
+	if endpoint.Addr().Is6() {
+		family = "IPV6"
+	}
+	e := event{Type: "diagnostic", At: time.Now().UTC().Format(time.RFC3339Nano), Code: code,
+		Endpoint: endpoint.String(), AddressFamily: family, Detail: endpoint.String() + " " + detail}
+	select {
+	case s.events <- e:
+	default:
+	}
 }
 
 type handler struct{ sink *sink }
@@ -108,7 +122,7 @@ func (h handler) Handle(_ context.Context, r slog.Record) error {
 func (h handler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h handler) WithGroup(string) slog.Handler      { return h }
 
-// Strict IPv4-only ingress, global work budget, bounded exact-packet replay window.
+// Validated dual-stack ingress, global work budget, bounded exact-packet replay window.
 // This also bounds live upstream challenges (one-second lifetime) under spoofed floods.
 type guardedConn struct {
 	*net.UDPConn
@@ -126,7 +140,7 @@ func (c *guardedConn) ReadFromUDPAddrPort(buf []byte) (int, netip.AddrPort, erro
 		if err != nil {
 			return 0, addr, err
 		}
-		if n < 63 || n > 1280 || !addr.Addr().Is4() {
+		if n < 63 || n > 1280 || (!addr.Addr().IsValid() || addr.Addr().IsUnspecified() || addr.Addr().IsMulticast()) {
 			continue
 		}
 		now := time.Now().Unix()
@@ -164,8 +178,8 @@ func (c *guardedConn) ReadFromUDPAddrPort(buf []byte) (int, netip.AddrPort, erro
 	}
 }
 func (c *guardedConn) WriteToUDPAddrPort(buf []byte, addr netip.AddrPort) (int, error) {
-	if !addr.Addr().Is4() || len(buf) > 1280 {
-		return 0, errors.New("IPv4/packet policy")
+	if (!addr.Addr().IsValid() || addr.Addr().IsUnspecified() || addr.Addr().IsMulticast()) || len(buf) > 1280 {
+		return 0, errors.New("address/packet policy")
 	}
 	return c.UDPConn.WriteToUDPAddrPort(buf, addr)
 }
@@ -184,7 +198,9 @@ func parseBootstraps(texts []string) ([]*enode.Node, error) {
 			return nil, fmt.Errorf("invalid bootstrap ENR: %w", err)
 		}
 		if _, ok := ipv4Endpoint(n); !ok {
-			return nil, errors.New("bootstrap requires advertised IPv4 UDP")
+			if _, ok6 := ipv6Endpoint(n); !ok6 {
+				return nil, errors.New("bootstrap requires advertised UDP endpoint")
+			}
 		}
 		nodes = append(nodes, n)
 	}
@@ -197,6 +213,8 @@ func rawEvent(n *enode.Node, provenance string, authenticated bool) (event, erro
 	}
 	endpoint := ""
 	if ep, ok := ipv4Endpoint(n); ok {
+		endpoint = ep.String()
+	} else if ep, ok := ipv6Endpoint(n); ok {
 		endpoint = ep.String()
 	}
 	return event{Type: "node", NodeID: hex.EncodeToString(crypto.FromECDSAPub(n.Pubkey())[1:]), RLP: hex.EncodeToString(raw), Endpoint: endpoint, Provenance: provenance, Authenticated: authenticated}, nil
@@ -242,18 +260,31 @@ func run(ctx context.Context, cfg config, s *sink) error {
 			transport.Close()
 			return err
 		}
+		client6, err6 := newFamilyClient(ln, key, true)
+		if err6 != nil {
+			s.diagnostic("IPV6_UNAVAILABLE", err6.Error())
+		} else {
+			client6.sink = s
+		}
+		client.sink = s
 		epoch, stopEpoch := context.WithTimeout(ctx, 10*time.Minute)
 		done := make(chan struct{})
 		go func() {
 			select {
 			case <-epoch.Done():
 				client.close()
+				if client6 != nil {
+					client6.close()
+				}
 				transport.Close()
 			case <-done:
 			}
 		}()
-		crawl(epoch, transport, client, boots, s)
+		crawl(epoch, transport, client, client6, boots, s)
 		close(done)
+		if client6 != nil {
+			client6.close()
+		}
 		client.close()
 		stopEpoch()
 		transport.Close()
@@ -263,42 +294,55 @@ func run(ctx context.Context, cfg config, s *sink) error {
 	}
 	return nil
 }
-func crawl(ctx context.Context, t *discover.UDPv5, client *ipv4Client, boots []*enode.Node, s *sink) {
+func crawl(ctx context.Context, t *discover.UDPv5, client *endpointClient, client6 *endpointClient, boots []*enode.Node, s *sink) {
 	frontier := append([]*enode.Node(nil), boots...)
 	seen := make(map[enode.ID]string)
 	for ctx.Err() == nil {
 		target := enode.ID{}
 		copy(target[:], crypto.Keccak256([]byte(time.Now().UTC().String())))
-		asked := make(map[enode.ID]bool)
+		asked := make(map[string]bool)
 		for queries := 0; queries < 64 && ctx.Err() == nil; queries++ {
 			sort.Slice(frontier, func(i, j int) bool { return enode.DistCmp(target, frontier[i].ID(), frontier[j].ID()) < 0 })
 			var peer *enode.Node
+			var selected *endpointClient
+			var endpoint netip.AddrPort
 			for _, n := range frontier {
-				if !asked[n.ID()] {
-					peer = n
+				for _, c := range []*endpointClient{client, client6} {
+					if c == nil {
+						continue
+					}
+					ep, ok := c.endpoint(n)
+					if ok && !asked[n.ID().String()+ep.String()] {
+						peer, selected, endpoint = n, c, ep
+						break
+					}
+				}
+				if peer != nil {
 					break
 				}
 			}
 			if peer == nil {
 				break
 			}
-			asked[peer.ID()] = true
-			fallback := !peer.IPAddr().Is4()
+			asked[peer.ID().String()+endpoint.String()] = true
+			s.endpointDiagnostic("ENDPOINT_ATTEMPT", endpoint, "")
+			fallback := selected.ipv6 || !peer.IPAddr().Is4()
 			var pingError error
 			if fallback {
-				pingError = client.ping(ctx, peer, t.Self().Seq())
+				pingError = selected.ping(ctx, peer, t.Self().Seq())
 			} else {
 				_, pingError = t.Ping(peer)
 			}
 			if pingError != nil {
-				s.diagnostic("PEER_TIMEOUT", peer.ID().String()+": "+pingError.Error())
+				s.endpointDiagnostic("ENDPOINT_FAILURE", endpoint, pingError.Error())
 				continue
 			}
+			s.endpointDiagnostic("ENDPOINT_SUCCESS", endpoint, "authenticated PING/PONG")
 			var record *enode.Node
 			var err error
 			if fallback {
 				var records []*enode.Node
-				records, err = client.findnode(ctx, peer, []uint{0})
+				records, err = selected.findnode(ctx, peer, []uint{0})
 				if err == nil && len(records) == 1 {
 					record = records[0]
 				} else if err == nil {
@@ -312,9 +356,9 @@ func crawl(ctx context.Context, t *discover.UDPv5, client *ipv4Client, boots []*
 					s.diagnostic("IDENTITY_MISMATCH", peer.ID().String())
 					continue
 				}
-				emitNode(s, seen, record, "discv5 authenticated PING/PONG and FINDNODE distance 0 at "+peerEndpoint(peer), true)
+				emitNode(s, seen, record, "discv5 authenticated PING/PONG and FINDNODE distance 0 at "+endpoint.String(), true)
 			} else {
-				s.diagnostic("ENR_REQUEST_FAILURE", err.Error())
+				s.endpointDiagnostic("ENR_REQUEST_FAILURE", endpoint, err.Error())
 			}
 			distance := uint(enode.LogDist(peer.ID(), target))
 			if distance == 0 {
@@ -329,20 +373,22 @@ func crawl(ctx context.Context, t *discover.UDPv5, client *ipv4Client, boots []*
 			}
 			var nodes []*enode.Node
 			if fallback {
-				nodes, err = client.findnode(ctx, peer, distances)
+				nodes, err = selected.findnode(ctx, peer, distances)
 			} else {
 				nodes, err = t.Findnode(peer, distances)
 			}
 			if err != nil {
-				s.diagnostic("FINDNODE_TIMEOUT", peer.ID().String()+": "+err.Error())
+				s.endpointDiagnostic("FINDNODE_TIMEOUT", endpoint, err.Error())
 			}
 			for _, n := range nodes {
-				emitNode(s, seen, n, "discv5 NODES from authenticated peer "+peer.ID().String()+" at "+peerEndpoint(peer)+"; advertised endpoint; returned-node session not asserted", false)
+				emitNode(s, seen, n, "discv5 NODES from authenticated peer "+peer.ID().String()+" at "+endpoint.String()+"; advertised endpoint; returned-node session not asserted", false)
 				if n.IPAddr().Is4() {
 					t.AddKnownNode(n)
 				}
 				if _, ok := ipv4Endpoint(n); !ok {
-					continue
+					if _, ok6 := ipv6Endpoint(n); !ok6 {
+						continue
+					}
 				}
 				duplicate := false
 				for i, current := range frontier {
@@ -371,7 +417,7 @@ func emitNode(s *sink, seen map[enode.ID]string, n *enode.Node, provenance strin
 	if err != nil {
 		return
 	}
-	token := e.RLP + fmt.Sprint(auth)
+	token := e.RLP + fmt.Sprint(auth) + provenance
 	if seen[n.ID()] == token {
 		return
 	}
@@ -419,5 +465,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-
-func peerEndpoint(n *enode.Node) string { ep, _ := ipv4Endpoint(n); return ep.String() }

@@ -1,4 +1,5 @@
 package io.github.gavinruff007.torchnode.storage;
+import io.github.gavinruff007.torchnode.model.EndpointAddress;
 
 import io.github.gavinruff007.torchnode.model.NodeRecord;
 import io.github.gavinruff007.torchnode.model.NodeType;
@@ -210,8 +211,7 @@ public class SqliteNodeStore implements NodeStore {
     }
 
     private DiscoveryObservation legacyObservation(NodeRecord node) {
-        NodeEndpoint.AddressFamily family = node.getIp().contains(":")
-                ? NodeEndpoint.AddressFamily.IPV6 : NodeEndpoint.AddressFamily.IPV4;
+        NodeEndpoint.AddressFamily family = EndpointAddress.family(node.getIp());
         return new DiscoveryObservation(node.identity(), node.getDiscoverySource(), List.of(
                 new NodeEndpoint(node.getIp(), NodeEndpoint.Transport.UDP, node.getUdpPort(), family, NodeEndpoint.Purpose.DISCOVERY),
                 node.getP2pEndpoint()), node.getLastSeen(), "legacy-node-record");
@@ -251,6 +251,27 @@ public class SqliteNodeStore implements NodeStore {
         } catch (Exception e) { throw new IllegalStateException("Cannot read discovery evidence", e); }
         observations.sort(java.util.Comparator.comparing(DiscoveryObservation::observedAt));
         return List.copyOf(observations);
+    }
+
+    /** Extend the existing JSON slot without erasing previously authenticated Hello/Status on failure. */
+    public void saveEndpointInspection(String nodeKey, java.util.Map<String,Object> hello,
+            java.util.Map<String,Object> status, List<java.util.Map<String,Object>> attempts) throws Exception {
+        java.util.Map<String,Object> envelope = new java.util.LinkedHashMap<>();
+        String savedStatus = null;
+        try (PreparedStatement query = connection.prepareStatement("SELECT observed_at, hello_json, status_json FROM p2p_observations WHERE node_key = ?")) {
+            query.setString(1, nodeKey);
+            try (ResultSet row = query.executeQuery()) {
+                if (row.next()) {
+                    if (row.getString("hello_json") != null) envelope.putAll(JSON.readValue(row.getString("hello_json"), new TypeReference<java.util.Map<String,Object>>() {}));
+                    if (envelope.containsKey("clientId")) envelope.putIfAbsent("_helloObservedAt", Instant.ofEpochSecond(row.getLong("observed_at")).toString());
+                    savedStatus = row.getString("status_json");
+                }
+            }
+        }
+        if (hello != null) { envelope.putAll(hello); envelope.put("_helloObservedAt", Instant.now().toString()); }
+        envelope.put("_evidenceType", "endpoint-inspection");
+        envelope.put("_endpointAttempts", attempts);
+        saveP2pObservation(nodeKey, JSON.writeValueAsString(envelope), status == null ? savedStatus : JSON.writeValueAsString(status));
     }
 
     /** Last authenticated Hello/ETH Status observation; discovery updates do not overwrite it. */

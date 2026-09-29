@@ -1,5 +1,7 @@
 package io.github.gavinruff007.torchnode.inspection;
 
+import io.github.gavinruff007.torchnode.model.EndpointAddress;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.*;
@@ -7,7 +9,9 @@ import okhttp3.*;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
-public class BeaconProber {
+public class BeaconProber implements AutoCloseable {
+    private volatile boolean closed;
+    private final java.util.Set<Call> active = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final OkHttpClient client;
     private final ObjectMapper mapper;
     
@@ -41,11 +45,15 @@ public class BeaconProber {
     }
 
     public BeaconInfo probeDetailed(String ip, int port) {
+        return probeDetailed(ip, port, Long.MAX_VALUE);
+    }
+
+    public BeaconInfo probeDetailed(String ip, int port, long deadline) {
         BeaconInfo info = new BeaconInfo();
         info.port = port;
         long started = System.nanoTime();
         try {
-            String versionJson = callBeaconApi(ip, port, "/eth/v1/node/version");
+            String versionJson = callBeaconApi(ip, port, "/eth/v1/node/version", deadline);
             JsonNode node = mapper.readTree(versionJson);
             info.version = text(node.at("/data/version"));
             if (info.version != null && !info.version.isBlank()) {
@@ -55,7 +63,7 @@ public class BeaconProber {
         } catch (Exception e) { info.error = concise(e); }
         started = System.nanoTime();
         try {
-            String headJson = callBeaconApi(ip, port, "/eth/v1/beacon/headers/head");
+            String headJson = callBeaconApi(ip, port, "/eth/v1/beacon/headers/head", deadline);
             JsonNode node = mapper.readTree(headJson);
             info.slot = longValue(node.at("/data/header/message/slot"));
             if (info.slot != null) {
@@ -65,7 +73,7 @@ public class BeaconProber {
         } catch (Exception e) { if (info.error == null) info.error = concise(e); }
         started = System.nanoTime();
         try {
-            String syncJson = callBeaconApi(ip, port, "/eth/v1/node/syncing");
+            String syncJson = callBeaconApi(ip, port, "/eth/v1/node/syncing", deadline);
             JsonNode data = mapper.readTree(syncJson).path("data");
             info.syncing = booleanValue(data.get("is_syncing"));
             info.syncDistance = longValue(data.get("sync_distance"));
@@ -79,7 +87,7 @@ public class BeaconProber {
         } catch (Exception e) { if (info.error == null) info.error = concise(e); }
         started = System.nanoTime();
         try {
-            String genesisJson = callBeaconApi(ip, port, "/eth/v1/beacon/genesis");
+            String genesisJson = callBeaconApi(ip, port, "/eth/v1/beacon/genesis", deadline);
             JsonNode data = mapper.readTree(genesisJson).path("data");
             info.genesisTime = longValue(data.get("genesis_time"));
             info.genesisValidatorsRoot = text(data.get("genesis_validators_root"));
@@ -108,20 +116,29 @@ public class BeaconProber {
         return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
     }
     
-    private String callBeaconApi(String ip, int port, String endpoint) throws IOException {
-        String url = "http://" + ip + ":" + port + endpoint;
+    private String callBeaconApi(String ip, int port, String endpoint, long deadline) throws IOException {
+        String url = EndpointAddress.http(ip, port) + endpoint;
         
         Request request = new Request.Builder()
             .url(url)
             .get()
             .build();
         
-        try (Response response = client.newCall(request).execute()) {
+        Call call = client.newCall(request);
+        if (deadline != Long.MAX_VALUE) call.timeout().deadlineNanoTime(deadline);
+        active.add(call);
+        if (closed || Thread.currentThread().isInterrupted() || System.nanoTime() >= deadline) call.cancel();
+        try (Response response = call.execute()) {
             if (!response.isSuccessful()) {
                 throw new IOException("HTTP " + response.code());
             }
             
             return response.body().string();
-        }
+        } finally { active.remove(call); }
+    }
+    @Override public void close() {
+        closed = true;
+        active.forEach(Call::cancel);
+        client.connectionPool().evictAll();
     }
 }
