@@ -54,6 +54,7 @@ public class InspectionService implements AutoCloseable {
             results.put(id, result);
             try (SqliteNodeStore store = new SqliteNodeStore(databasePath)) {
                 result.loadEnrEvidence(store.findEnrEvidence(node.identity()));
+                result.loadEndpointEvidence(store.findEndpointEvidence(node.identity()));
                 node.setObservations(store.findObservations(node.identity()));
             }
             catch (Exception e) { result.event("Saved ENR evidence unavailable", concise(e)); }
@@ -278,11 +279,11 @@ public class InspectionService implements AutoCloseable {
                 store.update(node);
                 if (store instanceof SqliteNodeStore sqlite && result.enrEvidence() != null)
                     sqlite.saveEnrEvidence(result.enrEvidence());
-                if (store instanceof SqliteNodeStore sqlite && !result.endpointAttempts().isEmpty()) {
+                if (store instanceof SqliteNodeStore sqlite && (!result.endpointAttempts().isEmpty() || !result.apiEndpointEvidence().isEmpty())) {
                     var p2p = result.p2p();
                     @SuppressWarnings("unchecked") Map<String,Object> hello = p2p == null ? null : (Map<String,Object>)p2p.get("hello");
                     @SuppressWarnings("unchecked") Map<String,Object> status = p2p == null ? null : (Map<String,Object>)p2p.get("status");
-                    sqlite.saveEndpointInspection(node.getKey(), hello, status, result.endpointAttempts());
+                    sqlite.saveEndpointInspection(node.getKey(), hello, status, result.endpointAttempts(), result.apiEndpointEvidence());
                 }
             } catch (Exception e) {
                 result.event("Database update failed", concise(e));

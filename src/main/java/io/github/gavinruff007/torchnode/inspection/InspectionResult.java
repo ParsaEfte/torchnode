@@ -25,6 +25,9 @@ public class InspectionResult {
     private List<String> rpcProbeEndpoints = List.of();
     private List<String> beaconProbeEndpoints = List.of();
     private final List<Map<String,Object>> endpointAttempts = new ArrayList<>();
+    private final List<Map<String,Object>> savedEndpointAttempts = new ArrayList<>();
+    private final List<Map<String,Object>> savedApiEvidence = new ArrayList<>();
+    private final List<Map<String,Object>> retainedHellos = new ArrayList<>();
     private boolean complete;
     private EnrEvidence enrEvidence;
     private final List<EnrEvidence> enrHistory = new ArrayList<>();
@@ -75,8 +78,33 @@ public class InspectionResult {
         timeline.add(event);
     }
 
-    public synchronized void setRpc(Map<String, Object> rpc) { this.rpc = rpc; }
-    public synchronized void setBeacon(Map<String, Object> beacon) { this.beacon = beacon; }
+    public synchronized void setRpc(Map<String, Object> rpc) { this.rpc = rpc == null ? null : new LinkedHashMap<>(rpc); if(this.rpc!=null)this.rpc.putIfAbsent("observedAt",Instant.now().toString()); }
+    public synchronized void setBeacon(Map<String, Object> beacon) { this.beacon = beacon == null ? null : new LinkedHashMap<>(beacon); if(this.beacon!=null)this.beacon.putIfAbsent("observedAt",Instant.now().toString()); }
+    public synchronized void loadEndpointEvidence(Map<String,List<Map<String,Object>>> saved) {
+        savedEndpointAttempts.addAll(saved.get("attempts")); savedApiEvidence.addAll(saved.get("apis")); retainedHellos.addAll(saved.get("retainedHellos"));
+    }
+    public synchronized List<Map<String,Object>> apiEndpointEvidence() {
+        var values = new ArrayList<Map<String,Object>>();
+        var sources=new LinkedHashMap<String,Map<String,Object>>(); sources.put("RPC",rpc==null?Map.of():rpc);sources.put("Beacon",beacon==null?Map.of():beacon);
+        for(var entry:sources.entrySet()) {
+            if(entry.getValue().get("endpoint")==null) continue;
+            var value=new LinkedHashMap<String,Object>(); value.put("source",entry.getKey());
+            value.put("endpoint",entry.getValue().get("endpoint")); value.put("observedAt",entry.getValue().get("observedAt"));
+            value.put("provenance","Independent Deep Inspection "+entry.getKey()+" response"); values.add(value);
+        }
+        return values;
+    }
+    private Map<String,Object> endpointAnalysis() {
+        var attempts=new ArrayList<>(savedEndpointAttempts);
+        if(!endpointAttempts.isEmpty())attempts.removeIf(a->node.getKey().equals(a.get("_nodeKey")));
+        attempts.addAll(endpointAttempts);
+        var apis=new ArrayList<>(savedApiEvidence);var currentApis=apiEndpointEvidence();
+        if(!currentApis.isEmpty())apis.removeIf(a->node.getKey().equals(a.get("_nodeKey")));
+        apis.addAll(currentApis);
+        var hellos=new ArrayList<>(retainedHellos);
+        if(p2p!=null && p2p.get("hello")!=null)hellos.removeIf(h->node.getKey().equals(h.get("_nodeKey")));
+        return io.github.gavinruff007.torchnode.analysis.EndpointAnalysis.analyze(node.identity(),node.getObservations(),enrHistory,attempts,apis,hellos).toMap();
+    }
     public synchronized void setP2p(Map<String, Object> p2p) { this.p2p = p2p; }
     public synchronized void setRpcProbeEndpoints(List<String> endpoints) { this.rpcProbeEndpoints = List.copyOf(endpoints); }
     public synchronized void setBeaconProbeEndpoints(List<String> endpoints) { this.beaconProbeEndpoints = List.copyOf(endpoints); }
@@ -95,6 +123,7 @@ public class InspectionResult {
         Map<String, Object> comparisons = new LinkedHashMap<>();
         if (selected == null || !selected.usable()) return comparisons;
         var fields = selected.record().fields();
+        // Legacy API projection only; family/time-aware endpoint analysis is authoritative.
         comparisons.put("IPv4 vs discovery", compare(fields.ip(), node.getIp()));
         comparisons.put("TCP vs discovery", compare(fields.tcp(), node.getTcpPort()));
         comparisons.put("UDP vs discovery", compare(fields.udp(), node.getUdpPort()));
@@ -130,6 +159,7 @@ public class InspectionResult {
         }).toList());
         root.put("endpointAttempts", new ArrayList<>(endpointAttempts));
         root.put("endpointObservations", node.getObservations().stream().map(io.github.gavinruff007.torchnode.model.DiscoveryObservation::toMap).toList());
+        root.put("endpointAnalysis", endpointAnalysis());
         root.put("client", clientMap());
         root.put("nodeStack", nodeStack());
         root.put("rpc", rpc);

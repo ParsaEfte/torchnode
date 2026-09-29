@@ -34,7 +34,7 @@ class EnrDashboardTest {
                 var token=java.util.regex.Pattern.compile("name=\"csrf\" value=\"([^\"]+)\"").matcher(dashboard);assertTrue(token.find());
                 String csrf=token.group(1);
                 var page=http.send(HttpRequest.newBuilder(URI.create(root+"/node?key="+URLEncoder.encode(node.getKey(),java.nio.charset.StandardCharsets.UTF_8))).build(),HttpResponse.BodyHandlers.ofString());
-                assertEquals(200,page.statusCode());assertTrue(page.body().contains("Advertised IPv6"));
+                assertEquals(200,page.statusCode());assertTrue(page.body().contains("Advertised IPv6"));assertTrue(page.body().contains("Endpoint Analysis"));
                 var match=java.util.regex.Pattern.compile("const inspectionId = '([^']+)' ".trim()).matcher(page.body());assertTrue(match.find());
                 String id=match.group(1);var json=new ObjectMapper();com.fasterxml.jackson.databind.JsonNode snapshot=null;
                 long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(12);
@@ -47,15 +47,42 @@ class EnrDashboardTest {
                 assertEquals("7",snapshot.at("/enr/record/sequence").asText());assertTrue(snapshot.at("/enr/record/fields/ip6").asText().contains("2001:db8"));
                 assertEquals(0,snapshot.at("/node/tcpPort").asInt());
                 assertEquals("MISMATCH",snapshot.at("/enrComparisons/TCP vs discovery").asText());
+                assertEquals(node.getNodeId(),snapshot.at("/endpointAnalysis/identity").asText());
+                assertEquals("NAT_EVIDENCE_INSUFFICIENT",snapshot.at("/endpointAnalysis/natEvidence").asText());
+                assertTrue(snapshot.at("/endpointAnalysis/comparisons").isArray());
                 try(var store=new SqliteNodeStore(path)){assertEquals(1,store.findEnrEvidence(node.identity()).size());}
                 String csv=http.send(HttpRequest.newBuilder(URI.create(root+"/export.csv")).build(),HttpResponse.BodyHandlers.ofString()).body();
-                assertTrue(csv.contains("ENDPOINT_OBSERVATIONS_JSON"));assertTrue(csv.contains("IPV6"));assertTrue(csv.contains("2001:db8:0:0:0:0:0:42"));
+                assertTrue(csv.contains("ENDPOINT_OBSERVATIONS_JSON,ENDPOINT_ANALYSIS,NAT_EVIDENCE"));assertTrue(csv.contains("NAT_EVIDENCE_INSUFFICIENT"));assertTrue(csv.contains("IPV6"));assertTrue(csv.contains("2001:db8:0:0:0:0:0:42"));
                 assertTrue(csv.contains("ENR_SEQUENCE"));assertTrue(csv.contains(snapshot.at("/enr/record/text").asText()));
+                assertEquals(21,parseCsvRow(csv.lines().findFirst().orElseThrow()).size());
+                try(var store=new SqliteNodeStore(path)) {
+                    var expected=json.readTree(json.writeValueAsString(io.github.gavinruff007.torchnode.analysis.EndpointAnalysis.fromStore(store,node.identity()).toMap()));
+                    boolean found=false;
+                    for(String line:csv.lines().skip(1).toList()) {
+                        var columns=parseCsvRow(line);assertEquals(21,columns.size());
+                        if(!node.getNodeId().equals(columns.get(3)))continue;
+                        assertEquals(expected,json.readTree(columns.get(19)));assertEquals(expected.path("natEvidence").asText(),columns.get(20));found=true;
+                    }
+                    assertTrue(found);
+                    assertEquals(expected.path("natEvidence"),snapshot.at("/endpointAnalysis/natEvidence"));
+                }
+
                 var request=HttpRequest.newBuilder(URI.create(root+"/data/clear")).header("Content-Type","application/x-www-form-urlencoded")
                         .POST(HttpRequest.BodyPublishers.ofString("csrf="+URLEncoder.encode(csrf,java.nio.charset.StandardCharsets.UTF_8))).build();
                 assertEquals(200,http.send(request,HttpResponse.BodyHandlers.ofString()).statusCode());
                 try(var store=new SqliteNodeStore(path)){assertEquals(0,store.count());assertTrue(store.findEnrEvidence(node.identity()).isEmpty());assertTrue(store.findObservations(node.identity()).isEmpty());}
             } finally {server.stop();}
         }
+    }
+    private static java.util.List<String> parseCsvRow(String line) {
+        var fields=new java.util.ArrayList<String>();var value=new StringBuilder();boolean quoted=false;
+        for(int i=0;i<line.length();i++) {
+            char c=line.charAt(i);
+            if(c=='"') {
+                if(quoted && i+1<line.length() && line.charAt(i+1)=='"'){value.append('"');i++;}
+                else quoted=!quoted;
+            } else if(c==',' && !quoted){fields.add(value.toString());value.setLength(0);}else value.append(c);
+        }
+        assertFalse(quoted);fields.add(value.toString());return fields;
     }
 }

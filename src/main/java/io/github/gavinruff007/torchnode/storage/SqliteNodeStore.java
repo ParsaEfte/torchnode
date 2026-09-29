@@ -256,6 +256,12 @@ public class SqliteNodeStore implements NodeStore {
     /** Extend the existing JSON slot without erasing previously authenticated Hello/Status on failure. */
     public void saveEndpointInspection(String nodeKey, java.util.Map<String,Object> hello,
             java.util.Map<String,Object> status, List<java.util.Map<String,Object>> attempts) throws Exception {
+        saveEndpointInspection(nodeKey, hello, status, attempts, List.of());
+    }
+
+    public void saveEndpointInspection(String nodeKey, java.util.Map<String,Object> hello,
+            java.util.Map<String,Object> status, List<java.util.Map<String,Object>> attempts,
+            List<java.util.Map<String,Object>> apis) throws Exception {
         java.util.Map<String,Object> envelope = new java.util.LinkedHashMap<>();
         String savedStatus = null;
         try (PreparedStatement query = connection.prepareStatement("SELECT observed_at, hello_json, status_json FROM p2p_observations WHERE node_key = ?")) {
@@ -271,7 +277,46 @@ public class SqliteNodeStore implements NodeStore {
         if (hello != null) { envelope.putAll(hello); envelope.put("_helloObservedAt", Instant.now().toString()); }
         envelope.put("_evidenceType", "endpoint-inspection");
         envelope.put("_endpointAttempts", attempts);
+        if (!apis.isEmpty()) envelope.put("_apiEndpointEvidence", apis);
         saveP2pObservation(nodeKey, JSON.writeValueAsString(envelope), status == null ? savedStatus : JSON.writeValueAsString(status));
+    }
+
+    /** Identity-scoped original evidence, not persisted derived conclusions. */
+    public java.util.Map<String,List<java.util.Map<String,Object>>> findEndpointEvidence(NodeIdentity identity) {
+        var result = new java.util.LinkedHashMap<String,List<java.util.Map<String,Object>>>();
+        for (String key : List.of("attempts", "apis", "retainedHellos")) result.put(key,new java.util.ArrayList<>());
+        if (!identity.available()) return result;
+        try (var query = connection.prepareStatement("SELECT p.hello_json,p.node_key FROM p2p_observations p JOIN nodes n ON p.node_key=n.key WHERE n.node_id=? ORDER BY p.node_key")) {
+            query.setString(1, identity.nodeId());
+            try (var rows = query.executeQuery()) {
+                while (rows.next()) {
+                    String raw = rows.getString(1); if (raw == null) continue;
+                    try {
+                        var json = JSON.readTree(raw);
+                        for (var pair : java.util.Map.of("_endpointAttempts","attempts","_apiEndpointEvidence","apis").entrySet()) {
+                            var values=json.path(pair.getKey());
+                            if (values.isArray()) for(var value:values) {
+                                var observation=JSON.convertValue(value,new TypeReference<java.util.Map<String,Object>>() {});
+                                observation.put("_nodeKey",rows.getString(2)); result.get(pair.getValue()).add(observation);
+                            }
+                        }
+                        if (json.has("clientId") && json.has("listenPort")) {
+                            var hello = new java.util.LinkedHashMap<String,Object>();
+                            hello.put("listenPort",JSON.convertValue(json.get("listenPort"),Object.class));
+                            hello.put("observedAt",json.path("_helloObservedAt").asText(null));
+                            hello.put("_nodeKey",rows.getString(2));
+                            // Only expose a detached legacy claim when its successful session is no longer retained.
+                            var attempts=json.path("_endpointAttempts");
+                            boolean associated=false;
+                            if(attempts.isArray()) for(var attempt:attempts)
+                                for(var stage:attempt.path("diagnostics")) if(stage.path("name").asText().equals("RLPx Hello") && stage.path("state").asText().equals("PASS")) associated=true;
+                            if(!associated) result.get("retainedHellos").add(hello);
+                        }
+                    } catch (RuntimeException | java.io.IOException malformed) { result.get("attempts").add(java.util.Map.of("malformed","Stored endpoint envelope cannot be decoded")); }
+                }
+            }
+        } catch(SQLException e) { throw new IllegalStateException("Cannot load endpoint evidence",e); }
+        return result;
     }
 
     /** Last authenticated Hello/ETH Status observation; discovery updates do not overwrite it. */

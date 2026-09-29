@@ -7,7 +7,7 @@ public record NodeEndpoint(String address, Transport transport, int port,
                            AddressFamily addressFamily, Purpose purpose) {
     public enum Transport { UDP, TCP }
     public enum AddressFamily { IPV4, IPV6 }
-    public enum Purpose { DISCOVERY, P2P }
+    public enum Purpose { DISCOVERY, P2P, RPC, BEACON }
     public NodeEndpoint {
         Objects.requireNonNull(address);
         Objects.requireNonNull(transport);

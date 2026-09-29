@@ -1,0 +1,375 @@
+{
+  "inspectionLifecycle": [
+    {
+      "stopMs": 0,
+      "terminated": true,
+      "queuedTasks": 0,
+      "activeTasks": 0,
+      "workers": 0,
+      "tcpSockets": 0,
+      "httpCalls": 0,
+      "helperProcesses": 0
+    },
+    {
+      "stopMs": 0,
+      "terminated": true,
+      "queuedTasks": 0,
+      "activeTasks": 0,
+      "workers": 0,
+      "tcpSockets": 0,
+      "httpCalls": 0,
+      "helperProcesses": 0
+    }
+  ],
+  "reopenDerivedEquality": true,
+  "canonicalIdentities": 382,
+  "nodesWithComparableEvidence": 198,
+  "comparisonOutcomes": {
+    "INSUFFICIENT_EVIDENCE": 12,
+    "MATCH": 881,
+    "NOT_COMPARABLE": 1039,
+    "NOT_OBSERVED": 2474
+  },
+  "natAssessments": {
+    "NAT_EVIDENCE_INSUFFICIENT": 382
+  },
+  "helloPortComparable": 0,
+  "helloPortMatch": 0,
+  "helloPortMismatch": 0,
+  "familySpecificComparisons": {
+    "IPV4_INSUFFICIENT_EVIDENCE": 11,
+    "IPV4_MATCH": 841,
+    "IPV4_NOT_COMPARABLE": 918,
+    "IPV4_NOT_OBSERVED": 1305,
+    "IPV6_MATCH": 40,
+    "IPV6_NOT_COMPARABLE": 120,
+    "IPV6_NOT_OBSERVED": 12
+  },
+  "mismatchExamples": [],
+  "postInspectionChildProcesses": 0,
+  "noLateInspectionMutation": true,
+  "integrity": [
+    [
+      "ok"
+    ]
+  ],
+  "foreignKeys": [],
+  "historicalAnalysis": {
+    "canonicalIdentities": 2842,
+    "reopenDerivedEquality": true,
+    "legacyHelloClaimsWithoutSessionTarget": 17,
+    "nodes": [
+      [
+        2943
+      ]
+    ],
+    "discovery_observations": [
+      [
+        5719
+      ]
+    ],
+    "enr_observations": [
+      [
+        532
+      ]
+    ],
+    "p2p_observations": [
+      [
+        17
+      ]
+    ],
+    "integrity": [
+      [
+        "ok"
+      ]
+    ],
+    "foreignKeys": []
+  },
+  "publicInspections": [
+    {
+      "identity": "0x000b48552f2d3d11bcdc669c3104a4291276db1cf215d198c39e8c1559f60d7c509b212039c7f620f923d8ef2de5635b93a96c1cbeb65cc8b37fad173de86dbf",
+      "complete": true,
+      "endpointAttempts": [
+        {
+          "endpoint": "37.187.71.163:30303",
+          "addressFamily": "IPV4",
+          "transport": "TCP",
+          "port": 30303,
+          "observedAt": "2026-09-29T12:43:38.232393Z",
+          "provenance": [
+            "discv5: discv5 NODES from authenticated peer 8c33b337088d593c5531bea57e38d85f10f354a3f539e60409a8261910220683 at 85.204.70.15:15741; advertised endpoint; returned-node session not asserted; acquired via DISCV5; authenticated returned-node session=false",
+            "ENR: discv5 NODES from authenticated peer 8c33b337088d593c5531bea57e38d85f10f354a3f539e60409a8261910220683 at 85.204.70.15:15741; advertised endpoint; returned-node session not asserted; acquired via DISCV5; authenticated returned-node session=false"
+          ],
+          "diagnostics": [
+            {
+              "name": "P2P TCP",
+              "state": "TIMEOUT",
+              "durationMs": null,
+              "reason": "P2P TCP connection timed out",
+              "reasonCode": "TCP_TIMEOUT",
+              "source": "Scanner",
+              "endpoint": "37.187.71.163:30303",
+              "addressFamily": "IPV4"
+            },
+            {
+              "name": "RLPx Auth",
+              "state": "NOT_TESTED",
+              "durationMs": null,
+              "reason": "tcp not connected",
+              "reasonCode": "TCP_NOT_CONNECTED",
+              "source": "RLPx",
+              "endpoint": "37.187.71.163:30303",
+              "addressFamily": "IPV4"
+            },
+            {
+              "name": "RLPx Hello",
+              "state": "NOT_TESTED",
+              "durationMs": null,
+              "reason": "auth not completed",
+              "reasonCode": "AUTH_NOT_COMPLETED",
+              "source": "RLPx Hello",
+              "endpoint": "37.187.71.163:30303",
+              "addressFamily": "IPV4"
+            },
+            {
+              "name": "ETH Status",
+              "state": "NOT_TESTED",
+              "durationMs": null,
+              "reason": "hello not completed",
+              "reasonCode": "HELLO_NOT_COMPLETED",
+              "source": "ETH Status",
+              "endpoint": "37.187.71.163:30303",
+              "addressFamily": "IPV4"
+            }
+          ],
+          "p2p": null
+        }
+      ],
+      "helloComparisons": [
+        {
+          "label": "Hello listenPort \u2194 authenticated TCP port",
+          "leftEvidence": null,
+          "rightEvidence": null,
+          "fields": [
+            "port"
+          ],
+          "outcome": "NOT_OBSERVED",
+          "reason": "No authenticated Hello listenPort observed."
+        }
+      ]
+    },
+    {
+      "identity": "0x01001203dbc45d6078701756e20749fb5eea018c0ec68871cb2090416492a6bb8d55aa73307965adee9fb9024d9c9cb91615c7ff241eb87ddfb5007919141f6d",
+      "complete": true,
+      "endpointAttempts": [
+        {
+          "endpoint": "120.78.227.96:30303",
+          "addressFamily": "IPV4",
+          "transport": "TCP",
+          "port": 30303,
+          "observedAt": "2026-09-29T12:43:45.456079Z",
+          "provenance": [
+            "discv4: NEIGHBORS from 124.243.185.107:30303"
+          ],
+          "diagnostics": [
+            {
+              "name": "P2P TCP",
+              "state": "PASS",
+              "durationMs": 349,
+              "reason": null,
+              "reasonCode": null,
+              "source": "Scanner",
+              "endpoint": "120.78.227.96:30303",
+              "addressFamily": "IPV4"
+            },
+            {
+              "name": "RLPx Auth",
+              "state": "PASS",
+              "durationMs": 419,
+              "reason": null,
+              "reasonCode": null,
+              "source": "RLPx",
+              "endpoint": "120.78.227.96:30303",
+              "addressFamily": "IPV4"
+            },
+            {
+              "name": "RLPx Hello",
+              "state": "PASS",
+              "durationMs": 0,
+              "reason": null,
+              "reasonCode": null,
+              "source": "RLPx Hello",
+              "endpoint": "120.78.227.96:30303",
+              "addressFamily": "IPV4"
+            },
+            {
+              "name": "ETH Status",
+              "state": "NOT_TESTED",
+              "durationMs": null,
+              "reason": "Peer offers no mutually supported ETH capability",
+              "reasonCode": "NO_COMPATIBLE_ETH_CAPABILITY",
+              "source": "ETH Status",
+              "endpoint": "120.78.227.96:30303",
+              "addressFamily": "IPV4"
+            }
+          ],
+          "p2p": {
+            "hello": {
+              "clientId": "Geth/seednode2/v2.1.3-unstable-e3c93726-20260825/linux-amd64/go1.18.3",
+              "devp2pVersion": 5,
+              "listenPort": 0,
+              "nodeId": "0x01001203dbc45d6078701756e20749fb5eea018c0ec68871cb2090416492a6bb8d55aa73307965adee9fb9024d9c9cb91615c7ff241eb87ddfb5007919141f6d",
+              "capabilities": [
+                {
+                  "name": "eth",
+                  "version": 66
+                },
+                {
+                  "name": "eth",
+                  "version": 67
+                },
+                {
+                  "name": "snap",
+                  "version": 1
+                }
+              ],
+              "supportedEthVersions": [
+                66,
+                67
+              ],
+              "snapSupport": true
+            },
+            "status": null,
+            "helloTrace": {
+              "localHelloSent": true,
+              "framesDecoded": 1,
+              "lastMessageCode": 0
+            },
+            "statusTrace": null
+          }
+        }
+      ],
+      "helloComparisons": [
+        {
+          "label": "Hello listenPort \u2194 authenticated TCP port",
+          "leftEvidence": "e5",
+          "rightEvidence": "e4",
+          "fields": [
+            "port"
+          ],
+          "outcome": "NOT_COMPARABLE",
+          "reason": "Hello listenPort zero is valid evidence without a positive listening-port claim."
+        }
+      ]
+    }
+  ],
+  "scannerRuns": [
+    {
+      "durationSeconds": 45,
+      "runningBeforeStop": true,
+      "stopMs": 715,
+      "ipv6EndpointDiagnostics": [
+        "ENDPOINT_ATTEMPT: [2001:41d0:24c:600::]:30303 ",
+        "ENDPOINT_FAILURE: [2001:41d0:24c:600::]:30303 write udp6 [::]:55358->[2001:41d0:24c:600::]:30303: sendto: no route to host",
+        "ENDPOINT_ATTEMPT: [2607:fdc0:781:3:0:1:0:37]:30303 ",
+        "ENDPOINT_FAILURE: [2607:fdc0:781:3:0:1:0:37]:30303 write udp6 [::]:55358->[2607:fdc0:781:3:0:1:0:37]:30303: sendto: no route to host",
+        "ENDPOINT_ATTEMPT: [2a01:4f9:3090:2453::2]:9000 ",
+        "ENDPOINT_FAILURE: [2a01:4f9:3090:2453::2]:9000 write udp6 [::]:55358->[2a01:4f9:3090:2453::2]:9000: sendto: no route to host",
+        "ENDPOINT_ATTEMPT: [2607:5300:203:1197::]:9000 ",
+        "ENDPOINT_FAILURE: [2607:5300:203:1197::]:9000 write udp6 [::]:55358->[2607:5300:203:1197::]:9000: sendto: no route to host"
+      ],
+      "peakScannerWorkers": 10,
+      "peakHttpCalls": 7,
+      "capturedExecutors": 2,
+      "executorsTerminated": true,
+      "queuedTasksAfterStop": 0,
+      "activeTasksAfterStop": 0,
+      "workersAfterStop": 0,
+      "tcpSocketsAfterStop": 0,
+      "httpCallsAfterStop": 0,
+      "noLateDatabaseMutation": true,
+      "transportCounts": {
+        "IPV4_ENDPOINT_ATTEMPT": 58,
+        "IPV6_ENDPOINT_FAILURE": 4,
+        "IPV6_ENDPOINT_ATTEMPT": 4,
+        "IPV4_ENDPOINT_SUCCESS": 10,
+        "IPV4_ENDPOINT_FAILURE": 47
+      },
+      "runningAfterStop": false,
+      "childProcessesAfterStop": 0,
+      "discv4SocketReleased": true,
+      "discoveryThreadsAfterStop": [],
+      "backgroundInspectionThreadsAfterStop": []
+    },
+    {
+      "durationSeconds": 12,
+      "runningBeforeStop": true,
+      "stopMs": 92,
+      "ipv6EndpointDiagnostics": [
+        "ENDPOINT_ATTEMPT: [2607:fdc0:781:3:0:1:0:37]:30303 ",
+        "ENDPOINT_FAILURE: [2607:fdc0:781:3:0:1:0:37]:30303 write udp6 [::]:59972->[2607:fdc0:781:3:0:1:0:37]:30303: sendto: no route to host",
+        "ENDPOINT_ATTEMPT: [2001:41d0:24c:600::]:30303 ",
+        "ENDPOINT_FAILURE: [2001:41d0:24c:600::]:30303 write udp6 [::]:59972->[2001:41d0:24c:600::]:30303: sendto: no route to host"
+      ],
+      "peakScannerWorkers": 10,
+      "peakHttpCalls": 8,
+      "capturedExecutors": 1,
+      "executorsTerminated": true,
+      "queuedTasksAfterStop": 0,
+      "activeTasksAfterStop": 0,
+      "workersAfterStop": 0,
+      "tcpSocketsAfterStop": 0,
+      "httpCallsAfterStop": 0,
+      "noLateDatabaseMutation": true,
+      "transportCounts": {
+        "IPV4_ENDPOINT_ATTEMPT": 16,
+        "IPV6_ENDPOINT_FAILURE": 2,
+        "IPV6_ENDPOINT_ATTEMPT": 2,
+        "IPV4_ENDPOINT_SUCCESS": 6,
+        "IPV4_ENDPOINT_FAILURE": 9
+      },
+      "runningAfterStop": false,
+      "childProcessesAfterStop": 0,
+      "discv4SocketReleased": true,
+      "discoveryThreadsAfterStop": [],
+      "backgroundInspectionThreadsAfterStop": []
+    }
+  ],
+  "startedAt": "2026-09-29T12:42:32.311133Z",
+  "finishedAt": "2026-09-29T12:43:36.195869Z",
+  "sourceCounts": [
+    [
+      "ENR",
+      260
+    ],
+    [
+      "discv4",
+      278
+    ],
+    [
+      "discv5",
+      245
+    ]
+  ],
+  "dualStackIdentities": [
+    [
+      8
+    ]
+  ],
+  "uniqueEndpointFamilies": [
+    [
+      "IPV4",
+      765
+    ],
+    [
+      "IPV6",
+      16
+    ]
+  ],
+  "authenticatedDiscv5Observations": [
+    [
+      16
+    ]
+  ],
+  "observerIpv6InternetCheck": "NoRouteToHostException: No route to host"
+}

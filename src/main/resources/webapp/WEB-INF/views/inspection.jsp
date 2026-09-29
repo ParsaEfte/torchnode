@@ -69,6 +69,7 @@
         <section class="card wide"><h2>Node identity</h2><div id="identity" class="rows"></div></section>
         <section class="card"><h2>Client information</h2><div id="client" class="rows"><div class="muted">Waiting for client identification…</div></div></section>
         <section class="card"><h2>Ethereum P2P</h2><div id="p2p" class="rows"></div></section>
+        <section class="card wide"><h2>Endpoint Analysis</h2><div id="endpoint-analysis" class="rows"></div></section>
         <section class="card wide"><h2>Network Verification</h2><div id="network-verification" class="rows"></div></section>
         <section class="card"><h2>JSON-RPC</h2><div id="rpc" class="rows"><div class="muted">Checking supported RPC endpoints…</div></div></section>
         <section class="card"><h2>Beacon API</h2><div id="beacon" class="rows"><div class="muted">Checking supported Beacon endpoints…</div></div></section>
@@ -84,6 +85,7 @@ const show = value => available(value) ? String(value) : 'Unavailable';
 const yesNo = value => value === true ? 'Yes' : value === false ? 'No' : 'Unavailable';
 const time = value => available(value) ? new Date(value).toLocaleString() : 'Unavailable';
 const expandedRows = new Set();
+let analysisComparisonsOpen = false, analysisEvidenceOpen = false;
 function skeleton(container, count) {
     container.replaceChildren();
     for (let i = 0; i < count; i++) {
@@ -137,6 +139,37 @@ function serviceTiming(diagnostic) {
 
 function render(data) {
     const node = data.node, tcp = diagnosticByName(data, 'P2P TCP');
+    const analysisTile = el('endpoint-analysis'); analysisTile.replaceChildren();
+    const analysis = data.endpointAnalysis;
+    if (analysis) {
+        row(analysisTile, 'NAT evidence', analysis.natEvidence, 'Analysis');
+        row(analysisTile, 'Assessment', analysis.natReason, 'Analysis', false, true);
+        row(analysisTile, 'Time scope', analysis.temporalScope, 'Analysis', false, true);
+        if (analysis.excludedEnrs) row(analysisTile, 'Untrusted ENRs excluded', analysis.excludedEnrs, 'Trust');
+        if (analysis.malformedAttempts) row(analysisTile, 'Unusable evidence entries', analysis.malformedAttempts, 'Analysis');
+        if (analysis.truncated) row(analysisTile, 'Analysis limits', 'Partial evidence/comparisons; conclusions remain insufficient', 'Analysis');
+        const comparisonsDetail = document.createElement('details'); comparisonsDetail.open = analysisComparisonsOpen;
+        comparisonsDetail.ontoggle = () => { analysisComparisonsOpen = comparisonsDetail.open; };
+        const summary = document.createElement('summary'); summary.textContent = 'Comparison evidence (' + analysis.comparisons.length + ')'; comparisonsDetail.append(summary);
+        const comparisonRows = document.createElement('div'); comparisonRows.id = 'endpoint-comparisons'; comparisonRows.className = 'rows'; comparisonsDetail.append(comparisonRows); analysisTile.append(comparisonsDetail);
+        (analysis.comparisons || []).forEach((comparison, index) => {
+            const item = row(comparisonRows, comparison.label + ' #' + (index + 1), comparison.outcome, 'Comparison');
+            const reason = document.createElement('div'); reason.className = 'reason';
+            reason.textContent = comparison.reason; item.append(reason);
+            [comparison.leftEvidence, comparison.rightEvidence].filter(Boolean).forEach(id => {
+                const evidence = analysis.evidence.find(e => e.id === id); if (!evidence) return;
+                const detail = document.createElement('div'); detail.className = 'reason mono';
+                detail.textContent = evidence.source + ' / ' + evidence.strength + ' / ' + JSON.stringify(evidence.endpoint || {port:evidence.port}) + ' / ' + (evidence.observedAt || 'timestamp unavailable') + ' / ' + evidence.provenance;
+                item.append(detail);
+            });
+        });
+        const evidenceDetail = document.createElement('details'); evidenceDetail.open = analysisEvidenceOpen;
+        evidenceDetail.ontoggle = () => { analysisEvidenceOpen = evidenceDetail.open; };
+        const evidenceSummary = document.createElement('summary'); evidenceSummary.textContent = 'Source and probe evidence (' + analysis.evidence.length + ')'; evidenceDetail.append(evidenceSummary);
+        const evidenceRows = document.createElement('div'); evidenceRows.id = 'endpoint-evidence'; evidenceRows.className = 'rows'; evidenceDetail.append(evidenceRows); analysisTile.append(evidenceDetail);
+        analysis.evidence.forEach(e => row(evidenceRows, e.id + ' / ' + e.source + ' / ' + e.strength, JSON.stringify(e.endpoint || {port:e.port}) + ' / ' + e.outcome + ' / ' + (e.observedAt || 'timestamp unavailable') + ' / ' + e.provenance, 'Evidence', true, true));
+    }
+
     const rpcCheck = diagnosticByName(data, 'JSON-RPC'), beaconCheck = diagnosticByName(data, 'Beacon API');
     const connection = el('connection');
     const partial = tcp.state !== 'PASS' && (!!data.rpc || !!data.beacon);
@@ -210,7 +243,7 @@ function render(data) {
         const unknown = (enr.entries || []).filter(entry => !entry.known);
         if (unknown.length) row(identity, 'Unknown ENR entries (RLP hex)', JSON.stringify(unknown), 'ENR', true, true);
         row(identity, 'Raw ENR RLP (hex)', enrEvidence.rawRlpHex, 'ENR', true, true);
-        Object.entries(data.enrComparisons || {}).forEach(([label, value]) => row(identity, label, value, 'Comparison'));
+        Object.entries(data.enrComparisons || {}).filter(([label]) => !['IPv4 vs discovery', 'TCP vs discovery', 'UDP vs discovery'].includes(label)).forEach(([label, value]) => row(identity, label, value, 'Comparison'));
     }
     if (!enr && enrEvidence && enrEvidence.rawRlpHex) row(identity, 'Raw ENR RLP (hex)', enrEvidence.rawRlpHex, 'ENR', true, true);
     if (data.enrAttempt && data.enrAttempt.outcome !== 'VALID')
