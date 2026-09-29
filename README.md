@@ -134,3 +134,44 @@ light-client context and a separate unmodified geth 1.17.6 peer. The peer was
 still at genesis, and Reth, Nethermind and Besu Status interoperability remains
 unevaluated. The P2P milestone therefore remains open. See the
 [inspection ADR](docs/adr/rlpx-p2p-inspection.md) for the evidence and limits.
+
+## Optional offline network enrichment
+
+Deep Inspection and CSV expose address-scoped country and ASN evidence for IPv4
+and IPv6. They never assign one location/provider to a cryptographic identity.
+Hosting classification is `NOT_AVAILABLE`: ASN organization is not a hosting,
+cloud or residential classification. Endpoint/NAT conclusions are unchanged.
+
+Obtain **GeoLite2 Country** and **GeoLite2 ASN** MMDB files separately under
+[MaxMind's download/setup terms](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data/)
+and [GeoLite EULA](https://www.maxmind.com/en/geolite/eula). Configure the local
+files before starting TorchNode:
+
+```shell
+export TORCHNODE_GEOIP_COUNTRY_DB=/path/to/GeoLite2-Country.mmdb
+export TORCHNODE_GEOIP_ASN_DB=/path/to/GeoLite2-ASN.mmdb
+```
+
+GeoIP2 Country files are also accepted. TorchNode does not download datasets or
+accept/download license keys. Keep databases and credentials outside the repo;
+follow the dataset terms, including updates and attribution. This product
+includes GeoLite2 data created by MaxMind, available from https://www.maxmind.com
+when those optional files are configured. The Java MMDB reader is Apache 2.0;
+the datasets have separate terms.
+
+Without either file, that lookup reports `DATASET_UNAVAILABLE`; Ethereum
+observation/inspection continues. Private, local, documentation and other
+excluded special-purpose addresses report `NOT_APPLICABLE`. Missing records and
+runtime failures remain distinct. Country is approximate IP-network location,
+not a peer's physical location; no city/region precision is claimed.
+
+Lookups are local, asynchronous and bounded. Rendering/export only read stored
+evidence; no observed IP is sent to a geolocation service. Results retain
+separate country/ASN source, SHA-256/build version, prefix and lookup timestamp.
+Replace datasets and restart the scanner/application to change the active
+version. Same-version stored results (including misses/failures) are reused;
+there are no automatic retries or background dataset updates. Prior-version
+records remain evidence, and UI/export show the latest known lookup, explicitly
+separate from the endpoint observation time. See the
+[ADR](docs/adr/geoip-asn-enrichment.md) and
+[validation](docs/validation/geoip-asn-enrichment.md).

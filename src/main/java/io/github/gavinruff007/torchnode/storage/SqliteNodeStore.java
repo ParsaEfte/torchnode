@@ -83,6 +83,46 @@ public class SqliteNodeStore implements NodeStore {
         }
         migrateDiscoverySchema();
         migrateEnrSchema();
+        migrateNetworkEnrichmentSchema();
+    }
+
+    /** Version 3 adds reusable address/dataset evidence without changing endpoint/identity rows. */
+    private void migrateNetworkEnrichmentSchema() throws SQLException {
+        try(var statement=connection.createStatement();var rows=statement.executeQuery("SELECT 1 FROM schema_migrations WHERE version=3")){if(rows.next())return;}
+        connection.setAutoCommit(false);
+        try(var statement=connection.createStatement()) {
+            statement.execute("CREATE TABLE IF NOT EXISTS network_enrichment(address TEXT NOT NULL, address_family TEXT NOT NULL, dataset_key TEXT NOT NULL, looked_up_at TEXT NOT NULL, evidence_json TEXT NOT NULL, PRIMARY KEY(address,dataset_key))");
+            statement.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES(3)");
+            connection.commit();
+        } catch(SQLException | RuntimeException e) { connection.rollback();throw e; }
+        finally { connection.setAutoCommit(true); }
+    }
+
+    public void saveNetworkEnrichment(io.github.gavinruff007.torchnode.enrichment.NetworkEnrichment evidence) throws SQLException {
+        try(var statement=connection.prepareStatement("INSERT INTO network_enrichment VALUES(?,?,?,?,?) ON CONFLICT(address,dataset_key) DO UPDATE SET address_family=excluded.address_family, looked_up_at=excluded.looked_up_at, evidence_json=excluded.evidence_json")) {
+            statement.setString(1,evidence.address());statement.setString(2,evidence.addressFamily().name());statement.setString(3,evidence.datasetKey());
+            statement.setString(4,evidence.country().lookedUpAt().compareTo(evidence.asn().lookedUpAt())>=0?evidence.country().lookedUpAt():evidence.asn().lookedUpAt());
+            try{statement.setString(5,JSON.writeValueAsString(evidence));}catch(Exception e){throw new SQLException("Cannot encode enrichment",e);}
+            statement.executeUpdate();
+        }
+    }
+
+    public Optional<io.github.gavinruff007.torchnode.enrichment.NetworkEnrichment> findNetworkEnrichment(String address,String datasetKey) {
+        String query=datasetKey==null?"SELECT evidence_json FROM network_enrichment WHERE address=? ORDER BY looked_up_at DESC,dataset_key LIMIT 1":"SELECT evidence_json FROM network_enrichment WHERE address=? AND dataset_key=?";
+        try(var statement=connection.prepareStatement(query)) {
+            statement.setString(1,EndpointAddress.parse(address).getHostAddress());if(datasetKey!=null)statement.setString(2,datasetKey);
+            try(var rows=statement.executeQuery()){return rows.next()?Optional.of(JSON.readValue(rows.getString(1),io.github.gavinruff007.torchnode.enrichment.NetworkEnrichment.class)):Optional.empty();}
+        } catch(Exception e){throw new IllegalStateException("Cannot load enrichment",e);}
+    }
+
+    /** Read-only view joining address enrichment to original endpoint provenance; never initiates a lookup. */
+    public List<java.util.Map<String,Object>> networkEnrichmentView(NodeIdentity identity) {
+        var analysis=io.github.gavinruff007.torchnode.analysis.EndpointAnalysis.fromStore(this,identity);
+        return analysis.evidence().stream().filter(e->e.endpoint()!=null).map(e->{
+            var view=new java.util.LinkedHashMap<String,Object>();view.put("endpoint",e.endpoint());view.put("source",e.source());
+            view.put("observedAt",e.observedAt());view.put("provenance",e.provenance());
+            view.put("enrichment",findNetworkEnrichment(e.endpoint().address(),null).orElse(null));return (java.util.Map<String,Object>)view;
+        }).toList();
     }
 
     /** Additive, transactional migration; existing rows and authenticated evidence retain their data. */
@@ -563,6 +603,7 @@ public class SqliteNodeStore implements NodeStore {
             statement.executeUpdate("DELETE FROM discovery_observations");
             statement.executeUpdate("DELETE FROM p2p_observations");
             statement.executeUpdate("DELETE FROM nodes");
+            statement.executeUpdate("DELETE FROM network_enrichment");
             connection.commit();
         } catch (SQLException e) {
             try {

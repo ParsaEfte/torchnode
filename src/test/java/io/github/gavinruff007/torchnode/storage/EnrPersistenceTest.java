@@ -51,7 +51,7 @@ class EnrPersistenceTest {
         var node = new NodeRecord("127.0.0.1", 30305, 30305, EnrFixtures.ID.nodeId());
         try (var store = new SqliteNodeStore(path)) { store.save(node); store.saveP2pObservation(node.getKey(), "{\"listenPort\":0}", "{}"); }
         try (var db = DriverManager.getConnection("jdbc:sqlite:" + path); var sql = db.createStatement()) {
-            sql.execute("DROP TABLE enr_observations"); sql.execute("DELETE FROM schema_migrations WHERE version = 2");
+            sql.execute("DROP TABLE enr_observations"); sql.execute("DROP TABLE network_enrichment"); sql.execute("DELETE FROM schema_migrations WHERE version IN (2,3)");
         }
         return path;
     }
@@ -63,7 +63,7 @@ class EnrPersistenceTest {
         }
         try (var db = DriverManager.getConnection("jdbc:sqlite:" + path); var sql = db.createStatement()) {
             try (var rows = sql.executeQuery("SELECT hello_json FROM p2p_observations")) { assertTrue(rows.next()); assertEquals("{\"listenPort\":0}", rows.getString(1)); }
-            try (var rows = sql.executeQuery("SELECT COUNT(*) FROM schema_migrations")) { assertTrue(rows.next()); assertEquals(2, rows.getInt(1)); }
+            try (var rows = sql.executeQuery("SELECT COUNT(*) FROM schema_migrations")) { assertTrue(rows.next()); assertEquals(3, rows.getInt(1)); }
             try (var rows = sql.executeQuery("PRAGMA integrity_check")) { assertTrue(rows.next()); assertEquals("ok", rows.getString(1)); }
         }
     }

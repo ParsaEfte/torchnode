@@ -39,10 +39,16 @@ public class InspectionService implements AutoCloseable {
     private final Object persistenceLock = new Object();
     private long generation;
     private volatile boolean closed;
+    private final io.github.gavinruff007.torchnode.enrichment.NetworkEnrichmentService enrichment;
     private final java.util.Set<Socket> activeSockets = ConcurrentHashMap.newKeySet();
 
     public InspectionService(String databasePath) {
+        this(databasePath, io.github.gavinruff007.torchnode.enrichment.OfflineGeoIpProvider.configured());
+    }
+
+    public InspectionService(String databasePath, io.github.gavinruff007.torchnode.enrichment.NetworkEnrichmentProvider provider) {
         this.databasePath = databasePath;
+        enrichment=new io.github.gavinruff007.torchnode.enrichment.NetworkEnrichmentService(databasePath, provider);
     }
 
     public String inspect(NodeRecord node) {
@@ -56,6 +62,7 @@ public class InspectionService implements AutoCloseable {
                 result.loadEnrEvidence(store.findEnrEvidence(node.identity()));
                 result.loadEndpointEvidence(store.findEndpointEvidence(node.identity()));
                 node.setObservations(store.findObservations(node.identity()));
+                result.loadNetworkEnrichment(store.networkEnrichmentView(node.identity()));
             }
             catch (Exception e) { result.event("Saved ENR evidence unavailable", concise(e)); }
             CompletableFuture<Void> enr;
@@ -90,6 +97,7 @@ public class InspectionService implements AutoCloseable {
 
     public void clearCollectedData(SqliteNodeStore store) throws SQLException {
         synchronized (persistenceLock) {
+            enrichment.clear();
             store.clearCollectedData();
             generation++;
             enrAcquirer.clear();
@@ -285,6 +293,17 @@ public class InspectionService implements AutoCloseable {
                     @SuppressWarnings("unchecked") Map<String,Object> status = p2p == null ? null : (Map<String,Object>)p2p.get("status");
                     sqlite.saveEndpointInspection(node.getKey(), hello, status, result.endpointAttempts(), result.apiEndpointEvidence());
                 }
+                if(store instanceof SqliteNodeStore sqlite) {
+                    var view=sqlite.networkEnrichmentView(node.identity());result.loadNetworkEnrichment(view);
+                    for(var address:view.stream().map(v->((io.github.gavinruff007.torchnode.model.NodeEndpoint)v.get("endpoint")).address()).distinct().toList())
+                        enrichment.request(address).thenAccept(value->{
+                            synchronized(persistenceLock) {
+                                if(closed || generation!=startedGeneration)return;
+                                try(var enrichedStore=new SqliteNodeStore(databasePath)){result.loadNetworkEnrichment(enrichedStore.networkEnrichmentView(node.identity()));}
+                                catch(Exception ignored){} // Independent enrichment must never fail protocol inspection.
+                            }
+                        });
+                }
             } catch (Exception e) {
                 result.event("Database update failed", concise(e));
             }
@@ -371,6 +390,7 @@ public class InspectionService implements AutoCloseable {
     @Override
     public void close() {
         synchronized (persistenceLock) { closed = true; generation++; }
+        enrichment.close();
         enrAcquirer.close(); executor.shutdownNow();
         activeSockets.forEach(socket -> { try { socket.close(); } catch (java.io.IOException ignored) {} });
         rpcProber.close(); beaconProber.close();

@@ -28,6 +28,8 @@ public class InspectionResult {
     private final List<Map<String,Object>> savedEndpointAttempts = new ArrayList<>();
     private final List<Map<String,Object>> savedApiEvidence = new ArrayList<>();
     private final List<Map<String,Object>> retainedHellos = new ArrayList<>();
+    private List<Map<String,Object>> networkEnrichment = List.of();
+    public synchronized void loadNetworkEnrichment(List<Map<String,Object>> values) { networkEnrichment=List.copyOf(values); }
     private boolean complete;
     private EnrEvidence enrEvidence;
     private final List<EnrEvidence> enrHistory = new ArrayList<>();
@@ -160,6 +162,7 @@ public class InspectionResult {
         root.put("endpointAttempts", new ArrayList<>(endpointAttempts));
         root.put("endpointObservations", node.getObservations().stream().map(io.github.gavinruff007.torchnode.model.DiscoveryObservation::toMap).toList());
         root.put("endpointAnalysis", endpointAnalysis());
+        root.put("networkEnrichment", networkEnrichment);
         root.put("client", clientMap());
         root.put("nodeStack", nodeStack());
         root.put("rpc", rpc);

@@ -69,6 +69,7 @@
         <section class="card wide"><h2>Node identity</h2><div id="identity" class="rows"></div></section>
         <section class="card"><h2>Client information</h2><div id="client" class="rows"><div class="muted">Waiting for client identification…</div></div></section>
         <section class="card"><h2>Ethereum P2P</h2><div id="p2p" class="rows"></div></section>
+        <section class="card wide"><h2>Network Location / Infrastructure</h2><div id="network-enrichment" class="rows"></div></section>
         <section class="card wide"><h2>Endpoint Analysis</h2><div id="endpoint-analysis" class="rows"></div></section>
         <section class="card wide"><h2>Network Verification</h2><div id="network-verification" class="rows"></div></section>
         <section class="card"><h2>JSON-RPC</h2><div id="rpc" class="rows"><div class="muted">Checking supported RPC endpoints…</div></div></section>
@@ -137,6 +138,39 @@ function serviceTiming(diagnostic) {
     return diagnostic.state === 'TIMEOUT' ? 'Timeout' : diagnostic.state.replace('_', ' ');
 }
 
+function renderNetworkEnrichment(entries) {
+    const enrichmentTile = el('network-enrichment'); enrichmentTile.replaceChildren();
+    row(enrichmentTile, 'Scope', 'Latest known address lookup; not identity location or historical discovery-time location', 'Evidence', false, true);
+    const groupedEnrichment = new Map();
+    entries.forEach(entry => {
+        const key = entry.endpoint.address;
+        if (!groupedEnrichment.has(key)) groupedEnrichment.set(key, []);
+        groupedEnrichment.get(key).push(entry);
+    });
+    groupedEnrichment.forEach(entries => {
+        const first = entries[0], value = first.enrichment;
+        row(enrichmentTile, first.endpoint.addressFamily, first.endpoint.address, 'Endpoint', true, true);
+        if (!value) row(enrichmentTile, 'Lookup', 'Not looked up yet', 'Enrichment');
+        else {
+            ['country', 'asn'].forEach(field => {
+                const lookup = value[field];
+                const label = field === 'country' ? 'Country' : 'ASN';
+                const found = field === 'country' ? [lookup.countryCode, lookup.countryName].filter(Boolean).join(' — ') : 'AS' + lookup.asn + (lookup.organization ? ' — ' + lookup.organization : '');
+                row(enrichmentTile, label, lookup.status === 'FOUND' ? found : lookup.status + (lookup.reason ? ' — ' + lookup.reason : ''), 'Offline data', false, true);
+                row(enrichmentTile, label + ' provenance', lookup.dataSource + ' / ' + lookup.dataSourceVersion + ' / ' + lookup.lookedUpAt + (lookup.networkPrefix ? ' / ' + lookup.networkPrefix : '') + ' / ' + lookup.provenance, 'Dataset', true, true);
+            });
+            row(enrichmentTile, 'Hosting classification', value.hostingClassification + ' — ASN organization does not classify hosting', 'Evidence', false, true);
+        }
+        const detail = document.createElement('details'), summary = document.createElement('summary');
+        summary.textContent = 'Endpoint observations (' + entries.length + ')';detail.append(summary);
+        const observations = document.createElement('div'); observations.className = 'rows';detail.append(observations);enrichmentTile.append(detail);
+        entries.forEach(entry => row(observations, entry.source, JSON.stringify(entry.endpoint) + ' / ' + (entry.observedAt || 'timestamp unavailable') + ' / ' + entry.provenance, 'Observation', true, true));
+    });
+    if (!groupedEnrichment.size) row(enrichmentTile, 'Lookup', 'No endpoint evidence available', 'Enrichment');
+    row(enrichmentTile, 'Attribution when configured', 'This product includes GeoLite2 data created by MaxMind, available from https://www.maxmind.com.', 'Dataset', false, true);
+
+}
+
 function render(data) {
     const node = data.node, tcp = diagnosticByName(data, 'P2P TCP');
     const analysisTile = el('endpoint-analysis'); analysisTile.replaceChildren();
@@ -169,6 +203,8 @@ function render(data) {
         const evidenceRows = document.createElement('div'); evidenceRows.id = 'endpoint-evidence'; evidenceRows.className = 'rows'; evidenceDetail.append(evidenceRows); analysisTile.append(evidenceDetail);
         analysis.evidence.forEach(e => row(evidenceRows, e.id + ' / ' + e.source + ' / ' + e.strength, JSON.stringify(e.endpoint || {port:e.port}) + ' / ' + e.outcome + ' / ' + (e.observedAt || 'timestamp unavailable') + ' / ' + e.provenance, 'Evidence', true, true));
     }
+
+    renderNetworkEnrichment(data.networkEnrichment || []);
 
     const rpcCheck = diagnosticByName(data, 'JSON-RPC'), beaconCheck = diagnosticByName(data, 'Beacon API');
     const connection = el('connection');

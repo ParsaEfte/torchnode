@@ -24,6 +24,7 @@ public class ScanDaemon {
     private final Set<String> inspectedNodes = ConcurrentHashMap.newKeySet();
     private DiscoveryProvider provider;
     private EnrAcquirer enrAcquirer;
+    private io.github.gavinruff007.torchnode.enrichment.NetworkEnrichmentService enrichment;
 
     public ScanDaemon(String databasePath) {
         this.databasePath = databasePath;
@@ -39,6 +40,7 @@ public class ScanDaemon {
         this.provider = provider;
         this.nodeInspector = new NodeInspector();
         this.enrAcquirer = new EnrAcquirer();
+        this.enrichment = new io.github.gavinruff007.torchnode.enrichment.NetworkEnrichmentService(databasePath);
         running = true;
 
         scanThread = new Thread(() -> {
@@ -50,14 +52,15 @@ public class ScanDaemon {
                 while (running) {
                     provider.discover(observation -> {
                         nodeStore.saveObservation(observation);
+                        observation.endpoints().forEach(endpoint->enrichment.request(endpoint.address()));
                         if (observation.source().equals("discv4")) enrAcquirer.acquire(new NodeRecord(observation), evidence -> {
                             if (evidence.outcome().equals("BUSY")) return;
-                            try (SqliteNodeStore enrStore = new SqliteNodeStore(databasePath)) { enrStore.saveEnrEvidence(evidence); }
+                            try (SqliteNodeStore enrStore = new SqliteNodeStore(databasePath)) { enrStore.saveEnrEvidence(evidence); if(evidence.usable())evidence.record().endpoints().forEach(endpoint->enrichment.request(endpoint.address())); }
                             catch (Exception e) { System.err.println("[ENR] Evidence persistence failed: " + e.getMessage()); }
                         });
                     });
                     provider.drainEnrEvidence(evidence -> {
-                        try { ((SqliteNodeStore)nodeStore).saveEnrEvidence(evidence); }
+                        try { ((SqliteNodeStore)nodeStore).saveEnrEvidence(evidence); if(evidence.usable())evidence.record().endpoints().forEach(endpoint->enrichment.request(endpoint.address())); }
                         catch (SQLException e) { throw new IllegalStateException("Cannot persist provider ENR", e); }
                     });
                     if (!running) break;
@@ -80,6 +83,7 @@ public class ScanDaemon {
                 running = false;
                 provider.close();
                 nodeInspector.close();
+                enrichment.close();
                 enrAcquirer.close();
                 boolean interrupted = false;
                 if (inspectionThread != null) {
@@ -175,6 +179,7 @@ public class ScanDaemon {
     public void stop() {
         running = false;
         if (nodeInspector != null) nodeInspector.close();
+        if (enrichment != null) enrichment.close();
         if (provider != null) provider.close();
         if (enrAcquirer != null) enrAcquirer.close();
         if (scanThread != null) {
@@ -191,4 +196,5 @@ public class ScanDaemon {
     public boolean isRunning() {
         return running && scanThread != null && scanThread.isAlive();
     }
+    public java.util.Map<String,Object> enrichmentMetrics() { return enrichment==null?java.util.Map.of():enrichment.metrics(); }
 }

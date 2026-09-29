@@ -75,6 +75,7 @@ public class ValidateActiveIpv6 {
                 long start = System.nanoTime(); daemon.stop(); daemon.awaitStopped();
                 run.put("stopMs", (System.nanoTime() - start) / 1_000_000);
             }
+            run.put("enrichmentAfterStop", daemon.enrichmentMetrics());
             run.put("ipv6EndpointDiagnostics", endpointDiagnostics);
             run.put("peakScannerWorkers", peakWorkers); run.put("peakHttpCalls", peakHttpCalls);
             run.put("capturedExecutors", executors.size());

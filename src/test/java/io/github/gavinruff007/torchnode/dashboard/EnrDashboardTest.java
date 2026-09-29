@@ -23,6 +23,9 @@ class EnrDashboardTest {
                 store.save(node);
                 var ipv6 = new io.github.gavinruff007.torchnode.model.NodeRecord("2001:db8::42", 30301, 0, "cd".repeat(64));
                 ipv6.setDiscoverySource("discv5"); store.save(ipv6);
+                // Synthetic addresses only exported; they never become active test probe targets.
+                var public6=new io.github.gavinruff007.torchnode.model.NodeRecord("2606:4700::1111",30301,0,"ef".repeat(64));public6.setDiscoverySource("discv5");store.save(public6);
+                try(var provider=new io.github.gavinruff007.torchnode.enrichment.OfflineGeoIpProvider(null,null)){store.saveNetworkEnrichment(provider.lookup(public6.getIp()));}
             }
             var server=new DashboardServer(port,path);server.start();
             try {
@@ -34,7 +37,7 @@ class EnrDashboardTest {
                 var token=java.util.regex.Pattern.compile("name=\"csrf\" value=\"([^\"]+)\"").matcher(dashboard);assertTrue(token.find());
                 String csrf=token.group(1);
                 var page=http.send(HttpRequest.newBuilder(URI.create(root+"/node?key="+URLEncoder.encode(node.getKey(),java.nio.charset.StandardCharsets.UTF_8))).build(),HttpResponse.BodyHandlers.ofString());
-                assertEquals(200,page.statusCode());assertTrue(page.body().contains("Advertised IPv6"));assertTrue(page.body().contains("Endpoint Analysis"));
+                assertEquals(200,page.statusCode());assertTrue(page.body().contains("Advertised IPv6"));assertTrue(page.body().contains("Endpoint Analysis"));assertTrue(page.body().contains("Network Location / Infrastructure"));
                 var match=java.util.regex.Pattern.compile("const inspectionId = '([^']+)' ".trim()).matcher(page.body());assertTrue(match.find());
                 String id=match.group(1);var json=new ObjectMapper();com.fasterxml.jackson.databind.JsonNode snapshot=null;
                 long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(12);
@@ -53,14 +56,16 @@ class EnrDashboardTest {
                 try(var store=new SqliteNodeStore(path)){assertEquals(1,store.findEnrEvidence(node.identity()).size());}
                 String csv=http.send(HttpRequest.newBuilder(URI.create(root+"/export.csv")).build(),HttpResponse.BodyHandlers.ofString()).body();
                 assertTrue(csv.contains("ENDPOINT_OBSERVATIONS_JSON,ENDPOINT_ANALYSIS,NAT_EVIDENCE"));assertTrue(csv.contains("NAT_EVIDENCE_INSUFFICIENT"));assertTrue(csv.contains("IPV6"));assertTrue(csv.contains("2001:db8:0:0:0:0:0:42"));
+                assertTrue(csv.contains("NETWORK_ENRICHMENT_JSON"));assertTrue(csv.contains("DATASET_UNAVAILABLE"));assertTrue(csv.contains("NOT_AVAILABLE"));
                 assertTrue(csv.contains("ENR_SEQUENCE"));assertTrue(csv.contains(snapshot.at("/enr/record/text").asText()));
-                assertEquals(21,parseCsvRow(csv.lines().findFirst().orElseThrow()).size());
+                assertEquals(22,parseCsvRow(csv.lines().findFirst().orElseThrow()).size());
                 try(var store=new SqliteNodeStore(path)) {
                     var expected=json.readTree(json.writeValueAsString(io.github.gavinruff007.torchnode.analysis.EndpointAnalysis.fromStore(store,node.identity()).toMap()));
                     boolean found=false;
                     for(String line:csv.lines().skip(1).toList()) {
-                        var columns=parseCsvRow(line);assertEquals(21,columns.size());
+                        var columns=parseCsvRow(line);assertEquals(22,columns.size());
                         if(!node.getNodeId().equals(columns.get(3)))continue;
+                        assertEquals(json.readTree(json.writeValueAsString(store.networkEnrichmentView(node.identity()))),json.readTree(columns.get(21)));
                         assertEquals(expected,json.readTree(columns.get(19)));assertEquals(expected.path("natEvidence").asText(),columns.get(20));found=true;
                     }
                     assertTrue(found);
