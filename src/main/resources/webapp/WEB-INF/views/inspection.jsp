@@ -75,6 +75,7 @@
         <section class="card"><h2>JSON-RPC</h2><div id="rpc" class="rows"><div class="muted">Checking supported RPC endpoints…</div></div></section>
         <section class="card"><h2>Beacon API</h2><div id="beacon" class="rows"><div class="muted">Checking supported Beacon endpoints…</div></div></section>
         <section class="card"><h2>Inspection timeline</h2><div id="timeline" class="timeline"></div></section>
+        <section class="card wide"><h2>Recent changes in observed evidence</h2><div id="change-history" class="rows" data-key="<%= h(node.getKey()) %>"></div><button id="changes-more" class="copy" type="button" hidden>Load more</button></section>
         <section class="card wide"><h2>Previous inspections</h2><div id="inspection-history" class="rows" data-key="<%= h(node.getKey()) %>"></div><button id="history-more" class="copy" type="button" hidden>Load more</button></section>
         <section class="card wide"><h2>Connectivity & diagnostics</h2><div id="p2p-pipeline" class="p2p-pipeline"></div><div id="diagnostics"></div></section>
     </div>
@@ -361,7 +362,7 @@ function render(data) {
 }
 
 async function poll() {
-    try { const response = await fetch('/inspection/status?id=' + encodeURIComponent(inspectionId), {cache:'no-store'}); if (response.status === 404) { location.replace('/'); return; } if (!response.ok) throw new Error('Inspection status unavailable'); const data = await response.json(); render(data); if(data.complete && !historyLoadedAfterComplete){historyLoadedAfterComplete=true;historyCursor=null;loadHistory();} setTimeout(poll, data.complete ? 5000 : 750); }
+    try { const response = await fetch('/inspection/status?id=' + encodeURIComponent(inspectionId), {cache:'no-store'}); if (response.status === 404) { location.replace('/'); return; } if (!response.ok) throw new Error('Inspection status unavailable'); const data = await response.json(); render(data); if(data.complete && !historyLoadedAfterComplete){historyLoadedAfterComplete=true;historyCursor=null;changeCursor=null;loadHistory();loadChanges();} setTimeout(poll, data.complete ? 5000 : 750); }
     catch (error) { el('warning').hidden = false; el('warning').textContent = error.message; setTimeout(poll, 2000); }
 }
 let historyCursor = null, historyLoading = false, historyLoadedAfterComplete = false;
@@ -396,7 +397,38 @@ async function loadHistory() {
     finally { historyLoading = false; }
 }
 el('history-more').onclick = loadHistory;
+let changeCursor = null, changesLoading = false;
+async function loadChanges() {
+    if (changesLoading) return;
+    changesLoading = true;
+    const container = el('change-history'), key = container.dataset.key;
+    try {
+        const url = '/inspection/changes?key=' + encodeURIComponent(key) + '&limit=20' + (changeCursor ? '&before=' + encodeURIComponent(changeCursor) : '');
+        const response = await fetch(url, {cache:'no-store'});
+        if (!response.ok) throw new Error('Change history unavailable');
+        const entries = await response.json();
+        if (!changeCursor) container.replaceChildren();
+        entries.forEach(entry => {
+            const detail = document.createElement('details'), summary = document.createElement('summary');
+            const first = entry.previousObservationId == null;
+            summary.textContent = (entry.currentObservedAt || 'Time unavailable') + ' · ' + (first ? 'First observed: ' : 'Observed transition: ') + entry.changeType.replaceAll('_', ' ') + ' · ' + (first ? entry.currentValue : entry.previousValue + ' → ' + entry.currentValue);
+            detail.append(summary);
+            const rows = document.createElement('div'); rows.className = 'rows';
+            row(rows, 'Current evidence', entry.currentObservationId + ' / ' + entry.currentValue, entry.source, false, true);
+            if (entry.previousObservationId) row(rows, 'Previous evidence', entry.previousObservationId + ' / ' + entry.previousValue + ' / ' + entry.previousObservedAt, entry.observationKind, false, true);
+            if (entry.endpoint) row(rows, 'Endpoint', entry.endpoint + ' / ' + (entry.addressFamily || 'family unavailable'), entry.domain, false, true);
+            row(rows, 'Comparison rules', 'v' + entry.derivationVersion, 'Derived evidence', false, true);
+            detail.append(rows); container.append(detail);
+        });
+        if (!entries.length && !changeCursor) row(container, 'Changes', 'No defensible comparison recorded yet', 'Derived evidence');
+        if (entries.length) changeCursor = entries[entries.length - 1].id;
+        el('changes-more').hidden = entries.length < 20;
+    } catch (error) { if (!changeCursor) row(container, 'Changes', error.message, 'Storage'); }
+    finally { changesLoading = false; }
+}
+el('changes-more').onclick = loadChanges;
 loadHistory();
+loadChanges();
 poll();
 </script>
 </body>

@@ -26,9 +26,16 @@ class HistoricalLifecycleTest {
 
     @Test void clearWinsAgainstStalePendingHistoryWriteAndRestartPersists() throws Exception {
         String path=temp.resolve("clear-race.db").toString();var node=new NodeRecord("192.0.2.1",30303,30303,"ab".repeat(64));
-        try(var store=new SqliteNodeStore(path)){store.save(node);}
+        try(var store=new SqliteNodeStore(path)){
+            store.save(node);
+            store.saveInspectionRun(node,"prior","2026-01-01T00:00:00Z","2026-01-01T00:00:00Z",
+                    java.util.Map.of("rpc",java.util.Map.of("endpoint","http://192.0.2.1:8545",
+                            "observedAt","2026-01-01T00:00:00Z","clientVersion","Geth/v1.0")),
+                    null,null,null,java.util.List.of(),java.util.List.of());
+        }
         try(var service=new InspectionService(path)) {
             var pending=new InspectionResult("old-run",node);
+            pending.setRpc(java.util.Map.of("endpoint","http://192.0.2.1:8545","clientVersion","Geth/v1.1"));
             var ready=new CountDownLatch(1);var done=new CountDownLatch(1);
             var error=new AtomicReference<Throwable>();
             Object lock=persistenceLock(service);
@@ -43,6 +50,7 @@ class HistoricalLifecycleTest {
             assertTrue(done.await(5,TimeUnit.SECONDS));assertNull(error.get());
             try(var store=new SqliteNodeStore(path)){
                 assertTrue(store.inspectionHistory(node.identity(),10,null).isEmpty());
+                assertTrue(store.changeHistory(node.identity(),10,null).isEmpty());
                 assertEquals(0,store.count());
             }
         }
@@ -58,10 +66,17 @@ class HistoricalLifecycleTest {
 
     @Test void closePreventsPendingGenerationFromOpeningStore() throws Exception {
         String path=temp.resolve("close-race.db").toString();var node=new NodeRecord("192.0.2.1",30303,30303,"ab".repeat(64));
-        try(var store=new SqliteNodeStore(path)){store.save(node);}
+        try(var store=new SqliteNodeStore(path)){
+            store.save(node);
+            store.saveInspectionRun(node,"prior","2026-01-01T00:00:00Z","2026-01-01T00:00:00Z",
+                    java.util.Map.of("rpc",java.util.Map.of("endpoint","http://192.0.2.1:8545",
+                            "observedAt","2026-01-01T00:00:00Z","clientVersion","Geth/v1.0")),
+                    null,null,null,java.util.List.of(),java.util.List.of());
+        }
         var service=new InspectionService(path);
         try {
             var pending=new InspectionResult("stale-after-close",node);
+            pending.setRpc(java.util.Map.of("endpoint","http://192.0.2.1:8545","clientVersion","Geth/v1.1"));
             var ready=new CountDownLatch(1);var done=new CountDownLatch(1);
             var error=new AtomicReference<Throwable>();
             synchronized(persistenceLock(service)){
@@ -70,7 +85,12 @@ class HistoricalLifecycleTest {
                 assertTrue(ready.await(5,TimeUnit.SECONDS));service.close();
             }
             assertTrue(done.await(5,TimeUnit.SECONDS));assertNull(error.get());
-            try(var store=new SqliteNodeStore(path)){assertTrue(store.inspectionHistory(node.identity(),10,null).isEmpty());}
+            try(var store=new SqliteNodeStore(path)){
+                assertEquals(java.util.List.of("prior"),store.inspectionHistory(node.identity(),10,null).stream()
+                        .map(SqliteNodeStore.InspectionHistory::id).toList());
+                assertTrue(store.changeHistory(node.identity(),10,null).stream()
+                        .noneMatch(event->event.observationKind().equals("INSPECTION")));
+            }
         }finally{service.close();}
     }
 }

@@ -11,8 +11,11 @@ Completed deep inspections and background API scans are now retained as
 measurement occurrences, with bounded identity history in Deep Inspection.
 Repeated identical evidence shares stored payloads while each attempt keeps
 its own time and outcome. Existing node rows remain the latest projection;
-history records factual observations, not inferred changes. See the
-[historical observations ADR](docs/adr/historical-observations.md).
+history records factual observations. A separate, bounded Deep Inspection
+section shows conservative derived comparisons between compatible evidence;
+the observations remain authoritative. See the
+[historical observations ADR](docs/adr/historical-observations.md) and
+[change detection ADR](docs/adr/change-detection.md).
 
 TorchNode acquires and validates real ENRs over discv4 and discv5, preserving raw records,
 sequence, unknown fields and advertised endpoints independently of discovery

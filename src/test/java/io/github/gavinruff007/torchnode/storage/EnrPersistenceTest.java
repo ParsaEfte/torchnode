@@ -66,7 +66,7 @@ class EnrPersistenceTest {
         }
         try (var db = DriverManager.getConnection("jdbc:sqlite:" + path); var sql = db.createStatement()) {
             try (var rows = sql.executeQuery("SELECT hello_json FROM p2p_observations")) { assertTrue(rows.next()); assertEquals("{\"listenPort\":0}", rows.getString(1)); }
-            try (var rows = sql.executeQuery("SELECT COUNT(*) FROM schema_migrations")) { assertTrue(rows.next()); assertEquals(4, rows.getInt(1)); }
+            try (var rows = sql.executeQuery("SELECT COUNT(*) FROM schema_migrations")) { assertTrue(rows.next()); assertEquals(5, rows.getInt(1)); }
             try (var rows = sql.executeQuery("PRAGMA integrity_check")) { assertTrue(rows.next()); assertEquals("ok", rows.getString(1)); }
         }
     }

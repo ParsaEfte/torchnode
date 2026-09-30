@@ -204,4 +204,40 @@ class DashboardServletTest {
             try(var store=new SqliteNodeStore(path)) {assertEquals(store.inspectionHistory(node.identity(),2,null).get(1).id(),rows.get(1).path("id").asText());}
         }
     }
+
+    @Test void changeHttpResponseAgreesWithDerivedRepositoryQuery() throws Exception {
+        String path=tempDir.resolve("change-ui.db").toString();
+        var node=new NodeRecord("192.0.2.5",30303,30303,"ab".repeat(64));
+        try(var store=new SqliteNodeStore(path)){
+            store.save(node);
+            for(int i=0;i<2;i++){
+                String at="2026-01-0"+(i+1)+"T00:00:00Z";
+                var attempt=java.util.Map.<String,Object>of("endpoint","http://192.0.2.5:8545",
+                        "attemptedAt",at,"tcpOpen",true,"rpcReachable",i==0);
+                store.saveInspectionRun(node,"rpc-"+i,at,at,java.util.Map.of("rpcAttempts",java.util.List.of(attempt)),
+                        null,null,null,java.util.List.of(),java.util.List.of());
+            }
+        }
+        try(var inspections=new InspectionService(path)){
+            var servlet=new DashboardServlet(path,new ScannerService(path),inspections);
+            var out=new java.io.StringWriter();var writer=new java.io.PrintWriter(out);
+            HttpServletResponse response=(HttpServletResponse)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{HttpServletResponse.class},(proxy,method,args)->"getWriter".equals(method.getName())?writer:null);
+            HttpServletRequest request=(HttpServletRequest)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{HttpServletRequest.class},(proxy,method,args)->switch(method.getName()){
+                        case "getServletPath" -> "/inspection/changes";
+                        case "getParameter" -> switch((String)args[0]){case "key" -> node.getKey();case "limit" -> "1";default -> null;};
+                        default -> null;
+                    });
+            servlet.doGet(request,response);writer.flush();
+            var rows=new com.fasterxml.jackson.databind.ObjectMapper().readTree(out.toString());
+            assertEquals(1,rows.size());
+            try(var store=new SqliteNodeStore(path)){
+                var event=store.changeHistory(node.identity(),1,null).get(0);
+                assertEquals(event.id(),rows.get(0).path("id").asText());
+                assertTrue(store.changeHistory(node.identity(),10,null).stream()
+                        .anyMatch(change->change.changeType().equals("RPC_PROBE_OUTCOME_CHANGED")));
+            }
+        }
+    }
 }

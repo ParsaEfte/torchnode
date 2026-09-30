@@ -7,6 +7,7 @@ import io.github.gavinruff007.torchnode.model.NodeIdentity;
 import io.github.gavinruff007.torchnode.enr.EnrEvidence;
 import io.github.gavinruff007.torchnode.model.NodeEndpoint;
 import io.github.gavinruff007.torchnode.model.DiscoveryObservation;
+import io.github.gavinruff007.torchnode.changes.ChangeDeriver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 
@@ -21,8 +22,10 @@ import java.util.Optional;
 
 public class SqliteNodeStore implements NodeStore {
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final int CHANGE_RULE_VERSION = 1;
     private Connection connection;
     private boolean historicalSchemaReady;
+    private boolean changeSchemaReady;
     
     public SqliteNodeStore(String dbPath) throws SQLException {
         connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
@@ -90,6 +93,66 @@ public class SqliteNodeStore implements NodeStore {
         migrateNetworkEnrichmentSchema();
         migrateHistoricalSchema();
         historicalSchemaReady = true;
+        migrateChangeSchema();
+        changeSchemaReady = true;
+    }
+
+    /** Version 5 stores only reproducible derived comparisons, never wire evidence. */
+    private void migrateChangeSchema() throws SQLException {
+        try(var statement=connection.createStatement();var rows=statement.executeQuery("SELECT 1 FROM schema_migrations WHERE version=5")) {
+            if(rows.next())return;
+        }
+        connection.setAutoCommit(false);
+        try(var statement=connection.createStatement()) {
+            statement.execute("""
+                    CREATE TABLE change_events(
+                      id TEXT PRIMARY KEY, node_id TEXT NOT NULL, domain TEXT NOT NULL,
+                      change_type TEXT NOT NULL, subject TEXT NOT NULL, observation_kind TEXT NOT NULL,
+                      previous_observation_id TEXT, current_observation_id TEXT NOT NULL,
+                      previous_observed_at TEXT, current_observed_at TEXT NOT NULL,
+                      previous_value TEXT, current_value TEXT NOT NULL,
+                      source TEXT NOT NULL, endpoint TEXT, address_family TEXT,
+                      derivation_version INTEGER NOT NULL)
+                    """);
+            statement.execute("CREATE INDEX idx_change_identity_time ON change_events(node_id,("+
+                    sortableTime("current_observed_at")+") DESC,id DESC)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_change_inspection_order ON inspection_runs(node_id,("+
+                    sortableTime("started_at")+") DESC,id DESC)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_change_enr_order ON enr_observations(node_id,("+
+                    sortableTime("observed_at")+") DESC,id DESC)");
+            statement.execute("INSERT INTO schema_migrations(version) VALUES(5)");
+            connection.commit();
+        }catch(SQLException | RuntimeException e){connection.rollback();throw e;}
+        finally{connection.setAutoCommit(true);}
+    }
+
+    public record ChangeEvent(String id,String nodeId,String domain,String changeType,String subject,
+                              String observationKind,String previousObservationId,String currentObservationId,
+                              String previousObservedAt,String currentObservedAt,String previousValue,
+                              String currentValue,String source,String endpoint,String addressFamily,
+                              int derivationVersion) {}
+
+    /** Cursor is the last returned event ID; this query never loads source payloads. */
+    public List<ChangeEvent> changeHistory(NodeIdentity identity,int limit,String beforeId) {
+        if(!identity.available() || limit<1 || limit>100)throw new IllegalArgumentException("Change limit must be 1..100 and identity available");
+        var result=new ArrayList<ChangeEvent>();
+        String at=sortableTime("current_observed_at");
+        String cursorAt="(SELECT "+at+" FROM change_events WHERE id=?)";
+        String sql="SELECT * FROM change_events WHERE node_id=? AND (? IS NULL OR "+
+                at+"<"+cursorAt+" OR ("+at+"="+cursorAt+" AND id<?)) "+
+                "ORDER BY "+at+" DESC,id DESC LIMIT ?";
+        try(var query=connection.prepareStatement(sql)){
+            query.setString(1,identity.nodeId());query.setString(2,beforeId);query.setString(3,beforeId);
+            query.setString(4,beforeId);query.setString(5,beforeId);query.setInt(6,limit);
+            try(var rows=query.executeQuery()){while(rows.next())result.add(new ChangeEvent(rows.getString("id"),rows.getString("node_id"),
+                    rows.getString("domain"),rows.getString("change_type"),rows.getString("subject"),
+                    rows.getString("observation_kind"),rows.getString("previous_observation_id"),
+                    rows.getString("current_observation_id"),rows.getString("previous_observed_at"),
+                    rows.getString("current_observed_at"),rows.getString("previous_value"),rows.getString("current_value"),
+                    rows.getString("source"),rows.getString("endpoint"),rows.getString("address_family"),
+                    rows.getInt("derivation_version")));}
+        }catch(SQLException e){throw new IllegalStateException("Cannot load change history",e);}
+        return List.copyOf(result);
     }
 
     /** Version 4 records each completed inspection while sharing identical evidence payloads. */
@@ -232,6 +295,197 @@ public class SqliteNodeStore implements NodeStore {
         } catch (NoSuchAlgorithmException e) { throw new SQLException("SHA-256 unavailable", e); }
     }
 
+    private void removeChanges(String nodeId,String kind) throws SQLException {
+        try(var delete=connection.prepareStatement("DELETE FROM change_events WHERE node_id=? AND observation_kind=?")){
+            delete.setString(1,nodeId);delete.setString(2,kind);delete.executeUpdate();
+        }
+    }
+
+    private void insertChange(String nodeId,String kind,String domain,String type,String subject,String previousId,
+                              String currentId,String previousAt,String currentAt,String previousValue,
+                              String currentValue,String source,String endpoint,String family) throws SQLException {
+        if(currentAt==null || currentValue==null)return;
+        String id=sha256(String.join("\u0000",nodeId,kind,type,subject,
+                previousId==null?"":previousId,currentId));
+        try(var insert=connection.prepareStatement("""
+                INSERT OR IGNORE INTO change_events VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """)){
+            insert.setString(1,id);insert.setString(2,nodeId);insert.setString(3,domain);
+            insert.setString(4,type);insert.setString(5,subject);insert.setString(6,kind);
+            insert.setString(7,previousId);insert.setString(8,currentId);
+            insert.setString(9,previousAt);insert.setString(10,currentAt);
+            insert.setString(11,previousValue);insert.setString(12,currentValue);
+            insert.setString(13,source);insert.setString(14,endpoint);insert.setString(15,family);
+            insert.setInt(16,CHANGE_RULE_VERSION);
+            insert.executeUpdate();
+        }
+    }
+
+    private record FactGroup(ChangeDeriver.Fact fact,boolean ambiguous) {}
+    private record FactPair(FactGroup newer,FactGroup current) {}
+
+    /** Instant.toString uses 0/3/6/9 fractional digits; pad them for exact SQL ordering. */
+    private static String sortableTime(String column) {
+        return "substr("+column+",1,19) || CASE WHEN substr("+column+",20,1)='.' THEN " +
+                "substr(substr("+column+",21,instr(substr("+column+",21),'Z')-1) || '000000000',1,9) " +
+                "ELSE '000000000' END";
+    }
+
+    private List<InspectionHistory> changeOrderedInspections(NodeIdentity identity,int offset) throws Exception {
+        String sql="SELECT r.*,e.evidence_json FROM inspection_runs r JOIN inspection_evidence e ON e.hash=r.evidence_hash "+
+                "WHERE r.node_id=? ORDER BY "+sortableTime("r.started_at")+" DESC,r.id DESC LIMIT 100 OFFSET ?";
+        try(var query=connection.prepareStatement(sql)){
+            query.setString(1,identity.nodeId());query.setInt(2,offset);return readInspectionHistory(query);
+        }
+    }
+
+    private List<EnrHistory> changeOrderedEnrs(NodeIdentity identity,int offset) throws Exception {
+        var result=new ArrayList<EnrHistory>();
+        String sql="SELECT id,evidence_json FROM enr_observations WHERE node_id=? ORDER BY "+
+                sortableTime("observed_at")+" DESC,id DESC LIMIT 100 OFFSET ?";
+        try(var query=connection.prepareStatement(sql)){
+            query.setString(1,identity.nodeId());query.setInt(2,offset);
+            try(var rows=query.executeQuery()){while(rows.next())result.add(new EnrHistory(rows.getLong(1),
+                    EnrEvidence.fromMap(JSON.readValue(rows.getString(2),
+                            new TypeReference<java.util.Map<String,Object>>() {}),JSON)));}
+        }
+        return result;
+    }
+
+    private void emitFactTransition(String nodeId,FactGroup older,FactGroup newer) throws SQLException {
+        if(older==null || newer==null || older.ambiguous() || newer.ambiguous())return;
+        var a=older.fact();var b=newer.fact();
+        if(ChangeDeriver.comparable(a,b) && !a.value().equals(b.value()))
+            insertChange(nodeId,"INSPECTION",a.domain(),a.type(),a.subject(),
+                    a.reference(),b.reference(),a.observedAt(),b.observedAt(),
+                    a.value(),b.value(),b.source(),b.endpoint(),b.family());
+    }
+
+    /** Rebuild one identity's inspection comparisons in the writer's transaction. */
+    private void rebuildInspectionChanges(NodeIdentity identity) throws SQLException {
+        if(!changeSchemaReady || !identity.available())return;
+        removeChanges(identity.nodeId(),"INSPECTION");
+        var groups=new java.util.HashMap<String,FactPair>();
+        int offset=0;
+        try {
+            while(true) {
+                var page=changeOrderedInspections(identity,offset);
+                if(page.isEmpty())break;
+                for(var run:page) {
+                    var facts=new ArrayList<>(ChangeDeriver.inspectionFacts(run));
+                    facts.sort(ChangeDeriver.NEWEST_FIRST);
+                    for(var older:facts) {
+                        String key=older.key();var pair=groups.get(key);
+                        if(pair==null){groups.put(key,new FactPair(null,new FactGroup(older,false)));continue;}
+                        var current=pair.current().fact();
+                        int order=Instant.parse(older.observedAt()).compareTo(Instant.parse(current.observedAt()));
+                        if(order==0){
+                            groups.put(key,new FactPair(pair.newer(),new FactGroup(current,
+                                    pair.current().ambiguous() || !older.value().equals(current.value()))));
+                        }else if(order<0){
+                            emitFactTransition(identity.nodeId(),pair.current(),pair.newer());
+                            groups.put(key,new FactPair(pair.current(),new FactGroup(older,false)));
+                        }else groups.put(key,new FactPair(null,new FactGroup(older,true)));
+                    }
+                }
+                if(page.size()<100)break;
+                offset+=page.size();
+            }
+            for(var pair:groups.values())emitFactTransition(identity.nodeId(),pair.current(),pair.newer());
+        }catch(Exception e){throw e instanceof SQLException sql?sql:new SQLException("Cannot derive inspection comparisons",e);}
+    }
+
+    private record EnrGroup(EnrHistory evidence,boolean ambiguous) {}
+
+    private void rebuildEnrChanges(NodeIdentity identity) throws SQLException {
+        if(!changeSchemaReady || !identity.available())return;
+        removeChanges(identity.nodeId(),"ENR");
+        EnrGroup newer=null,current=null;int offset=0;
+        try {
+            while(true){
+                var page=changeOrderedEnrs(identity,offset);
+                if(page.isEmpty())break;
+                for(var older:page) {
+                    if(!older.evidence().usable())continue;
+                    if(current==null){current=new EnrGroup(older,false);continue;}
+                    int order=older.evidence().observedAt().compareTo(current.evidence().evidence().observedAt());
+                    if(order==0){
+                        current=new EnrGroup(current.evidence(),current.ambiguous() ||
+                                !older.evidence().record().sequence().equals(current.evidence().evidence().record().sequence()));
+                    }else if(order<0){
+                        emitEnrTransition(identity.nodeId(),current,newer);
+                        newer=current;current=new EnrGroup(older,false);
+                    }else{newer=null;current=new EnrGroup(older,true);}
+                }
+                if(page.size()<100)break;offset+=page.size();
+            }
+            emitEnrTransition(identity.nodeId(),current,newer);
+        }catch(Exception e){throw e instanceof SQLException sql?sql:new SQLException("Cannot derive ENR comparisons",e);}
+    }
+
+    private void emitEnrTransition(String nodeId,EnrGroup older,EnrGroup newer) throws SQLException {
+        if(older==null || newer==null || older.ambiguous() || newer.ambiguous() ||
+                !older.evidence().evidence().observedAt().isBefore(newer.evidence().evidence().observedAt()))return;
+        var oldSeq=new java.math.BigInteger(older.evidence().evidence().record().sequence());
+        var newSeq=new java.math.BigInteger(newer.evidence().evidence().record().sequence());
+        if(newSeq.compareTo(oldSeq)>0)insertChange(nodeId,"ENR","ENR","ENR_SEQUENCE_ADVANCED","trusted-sequence",
+                Long.toString(older.evidence().id()),Long.toString(newer.evidence().id()),older.evidence().evidence().observedAt().toString(),
+                newer.evidence().evidence().observedAt().toString(),oldSeq.toString(),newSeq.toString(),"ENR",null,null);
+    }
+
+    private void rebuildDiscoveryChanges(NodeIdentity identity) throws SQLException {
+        if(!changeSchemaReady || !identity.available())return;
+        removeChanges(identity.nodeId(),"DISCOVERY");
+        var first=new java.util.HashMap<String,EndpointHistory>();
+        EndpointHistory firstIpv6=null;
+        try(var query=connection.prepareStatement("""
+                SELECT e.*,d.source,d.provenance FROM discovery_endpoint_index e
+                JOIN discovery_observations d ON d.id=e.observation_id
+                WHERE e.node_id=?
+                """)){
+            query.setString(1,identity.nodeId());
+            try(var rows=query.executeQuery()){while(rows.next()){
+                var endpoint=new EndpointHistory(rows.getLong("observation_id"),rows.getString("node_id"),
+                        rows.getString("address"),rows.getString("address_family"),rows.getString("transport"),
+                        rows.getString("purpose"),rows.getInt("port"),rows.getString("observed_at"),
+                        rows.getString("source"),rows.getString("provenance"));
+                String key=endpoint.source()+"|"+endpoint.addressFamily()+"|"+endpoint.transport()+"|"+
+                        endpoint.purpose()+"|"+endpoint.address()+"|"+endpoint.port();
+                first.merge(key,endpoint,(a,b)->earlierEndpoint(a,b)?a:b);
+                if("IPV6".equals(endpoint.addressFamily()) &&
+                        (firstIpv6==null || !earlierEndpoint(firstIpv6,endpoint)))firstIpv6=endpoint;
+            }}
+        }
+        for(var entry:first.entrySet()){
+            var endpoint=entry.getValue();
+            insertChange(identity.nodeId(),"DISCOVERY","DISCOVERY","ENDPOINT_FIRST_OBSERVED",entry.getKey(),null,
+                    Long.toString(endpoint.observationId()),null,endpoint.observedAt(),null,
+                    endpoint.address()+":"+endpoint.port(),endpoint.source(),endpoint.address(),endpoint.addressFamily());
+        }
+        if(firstIpv6!=null)insertChange(identity.nodeId(),"DISCOVERY","DISCOVERY","IPV6_FIRST_OBSERVED","identity-ipv6",null,
+                Long.toString(firstIpv6.observationId()),null,firstIpv6.observedAt(),null,
+                firstIpv6.address(),firstIpv6.source(),firstIpv6.address(),firstIpv6.addressFamily());
+    }
+
+    private static boolean earlierEndpoint(EndpointHistory a,EndpointHistory b) {
+        int order=Instant.parse(a.observedAt()).compareTo(Instant.parse(b.observedAt()));
+        return order<0 || (order==0 && a.observationId()<b.observationId());
+    }
+
+    /** Deterministic correction/rebuild path; original observations are never changed. */
+    public void rebuildChanges(NodeIdentity identity) throws SQLException {
+        if(!identity.available())throw new IllegalArgumentException("Canonical identity required");
+        if(!connection.getAutoCommit())throw new IllegalStateException("Change rebuild transaction already active");
+        connection.setAutoCommit(false);
+        try{
+            rebuildDiscoveryChanges(identity);
+            rebuildEnrChanges(identity);
+            rebuildInspectionChanges(identity);
+            connection.commit();
+        }catch(SQLException | RuntimeException e){connection.rollback();throw e;}
+        finally{connection.setAutoCommit(true);}
+    }
+
     @SuppressWarnings("unchecked")
     private static java.util.Map<String,Object> separateTiming(java.util.Map<String,Object> evidence,
                                                                  java.util.Map<String,Object> timing) {
@@ -297,6 +551,7 @@ public class SqliteNodeStore implements NodeStore {
             update(node);
             if (enr != null) saveEnrEvidence(enr);
             if (!attempts.isEmpty() || !apis.isEmpty()) saveEndpointInspection(node.getKey(),hello,status,attempts,apis);
+            rebuildInspectionChanges(node.identity());
             connection.commit();
         } catch (Exception e) { connection.rollback(); throw e; }
         finally { connection.setAutoCommit(true); }
@@ -544,8 +799,9 @@ public class SqliteNodeStore implements NodeStore {
             insert.setString(8, evidence.rawRlpHex());
             try { insert.setString(9, JSON.writeValueAsString(evidence.toMap())); }
             catch (Exception e) { throw new SQLException("Cannot encode ENR evidence", e); }
-            insert.executeUpdate();
+            int inserted=insert.executeUpdate();
             if (evidence.observation().isPresent()) insertObservation(evidence.observation().get());
+            if(inserted>0)rebuildEnrChanges(evidence.associatedIdentity());
             connection.releaseSavepoint(point);
             if (ownTransaction) connection.commit();
         } catch (SQLException | RuntimeException e) {
@@ -576,6 +832,7 @@ public class SqliteNodeStore implements NodeStore {
     }
 
     private void insertObservation(DiscoveryObservation observation) throws SQLException {
+        int inserted;
         try (PreparedStatement insert = connection.prepareStatement("""
                 INSERT OR IGNORE INTO discovery_observations(node_id, source, provenance, observed_at, endpoints_json)
                 VALUES (?, ?, ?, ?, ?)
@@ -586,7 +843,7 @@ public class SqliteNodeStore implements NodeStore {
             insert.setString(4, observation.observedAt().toString());
             try { insert.setString(5, JSON.writeValueAsString(observation.endpoints())); }
             catch (Exception e) { throw new SQLException("Cannot serialize endpoint evidence", e); }
-            insert.executeUpdate();
+            inserted=insert.executeUpdate();
         }
         if(historicalSchemaReady)try(var query=connection.prepareStatement("SELECT id FROM discovery_observations WHERE node_id=? AND source=? AND provenance=? AND observed_at=? AND endpoints_json=?")) {
             query.setString(1,observation.identity().nodeId());query.setString(2,observation.source());query.setString(3,observation.provenance());
@@ -594,6 +851,7 @@ public class SqliteNodeStore implements NodeStore {
             try{query.setString(5,JSON.writeValueAsString(observation.endpoints()));}catch(Exception e){throw new SQLException("Cannot serialize endpoint evidence",e);}
             try(var rows=query.executeQuery()){if(rows.next())indexEndpoints(rows.getLong(1),observation.identity().nodeId(),observation.observedAt().toString(),observation.endpoints());}
         }
+        if(inserted>0)rebuildDiscoveryChanges(observation.identity());
     }
 
     private void indexEndpoints(long observationId,String nodeId,String observedAt,List<NodeEndpoint> endpoints) throws SQLException {
@@ -944,6 +1202,7 @@ public class SqliteNodeStore implements NodeStore {
             statement.executeUpdate("DELETE FROM enr_observations");
             statement.executeUpdate("DELETE FROM discovery_endpoint_index");
             statement.executeUpdate("DELETE FROM inspection_enrichment_context");
+            statement.executeUpdate("DELETE FROM change_events");
             statement.executeUpdate("DELETE FROM inspection_runs");
             statement.executeUpdate("DELETE FROM inspection_evidence");
             statement.executeUpdate("DELETE FROM network_enrichment_lookups");

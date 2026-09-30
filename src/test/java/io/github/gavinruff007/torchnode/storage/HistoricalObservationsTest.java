@@ -78,7 +78,7 @@ class HistoricalObservationsTest {
         }
         try(var db=DriverManager.getConnection("jdbc:sqlite:"+path);var sql=db.createStatement()) {
             try(var rows=sql.executeQuery("PRAGMA integrity_check")){assertEquals("ok",rows.getString(1));}
-            try(var rows=sql.executeQuery("SELECT COUNT(*) FROM schema_migrations")){assertEquals(4,rows.getInt(1));}
+            try(var rows=sql.executeQuery("SELECT COUNT(*) FROM schema_migrations")){assertEquals(5,rows.getInt(1));}
         }
     }
 
