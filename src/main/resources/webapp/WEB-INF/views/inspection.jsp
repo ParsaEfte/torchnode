@@ -75,6 +75,7 @@
         <section class="card"><h2>JSON-RPC</h2><div id="rpc" class="rows"><div class="muted">Checking supported RPC endpoints…</div></div></section>
         <section class="card"><h2>Beacon API</h2><div id="beacon" class="rows"><div class="muted">Checking supported Beacon endpoints…</div></div></section>
         <section class="card"><h2>Inspection timeline</h2><div id="timeline" class="timeline"></div></section>
+        <section class="card wide"><h2>Previous inspections</h2><div id="inspection-history" class="rows" data-key="<%= h(node.getKey()) %>"></div><button id="history-more" class="copy" type="button" hidden>Load more</button></section>
         <section class="card wide"><h2>Connectivity & diagnostics</h2><div id="p2p-pipeline" class="p2p-pipeline"></div><div id="diagnostics"></div></section>
     </div>
 </main>
@@ -360,9 +361,42 @@ function render(data) {
 }
 
 async function poll() {
-    try { const response = await fetch('/inspection/status?id=' + encodeURIComponent(inspectionId), {cache:'no-store'}); if (response.status === 404) { location.replace('/'); return; } if (!response.ok) throw new Error('Inspection status unavailable'); const data = await response.json(); render(data); setTimeout(poll, data.complete ? 5000 : 750); }
+    try { const response = await fetch('/inspection/status?id=' + encodeURIComponent(inspectionId), {cache:'no-store'}); if (response.status === 404) { location.replace('/'); return; } if (!response.ok) throw new Error('Inspection status unavailable'); const data = await response.json(); render(data); if(data.complete && !historyLoadedAfterComplete){historyLoadedAfterComplete=true;historyCursor=null;loadHistory();} setTimeout(poll, data.complete ? 5000 : 750); }
     catch (error) { el('warning').hidden = false; el('warning').textContent = error.message; setTimeout(poll, 2000); }
 }
+let historyCursor = null, historyLoading = false, historyLoadedAfterComplete = false;
+async function loadHistory() {
+    if (historyLoading) return;
+    historyLoading = true;
+    const container = el('inspection-history'), key = container.dataset.key;
+    try {
+        const url = '/inspection/history?key=' + encodeURIComponent(key) + '&limit=20' + (historyCursor ? '&before=' + encodeURIComponent(historyCursor) : '');
+        const response = await fetch(url, {cache:'no-store'});
+        if (!response.ok) throw new Error('History unavailable');
+        const entries = await response.json();
+        if (!historyCursor) container.replaceChildren();
+        entries.forEach(entry => {
+            const detail = document.createElement('details'), summary = document.createElement('summary');
+            const stages = (entry.evidence.diagnostics || []).filter(d => ['P2P TCP','RLPx Auth','RLPx Hello','ETH Status','JSON-RPC','Beacon API'].includes(d.name));
+            summary.textContent = (entry.startedAt || 'Time unavailable') + ' · ' + stages.map(d => d.name + ': ' + d.state).join(' · ');
+            detail.append(summary);
+            const rows = document.createElement('div'); rows.className = 'rows';
+            (entry.evidence.endpointAttempts || []).forEach(attempt => row(rows, attempt.addressFamily + ' endpoint', attempt.endpoint + ' / ' + attempt.observedAt, 'P2P', false, true));
+            stages.forEach(stage => row(rows, stage.name, stage.state + (stage.reason ? ' / ' + stage.reason : ''), stage.source, false, true));
+            const hello = entry.evidence.p2p && entry.evidence.p2p.hello;
+            if (hello) { row(rows, 'Authenticated client', hello.clientId, 'Hello'); row(rows, 'Capabilities', JSON.stringify(hello.capabilities || []), 'Hello', true, true); }
+            if (entry.evidence.rpc) row(rows, 'RPC evidence', JSON.stringify(entry.evidence.rpc), 'RPC', true, true);
+            if (entry.evidence.beacon) row(rows, 'Beacon evidence', JSON.stringify(entry.evidence.beacon), 'Beacon', true, true);
+            detail.append(rows); container.append(detail);
+        });
+        if (!entries.length && !historyCursor) row(container, 'History', 'No completed inspections recorded yet', 'Storage');
+        if (entries.length) historyCursor = entries[entries.length - 1].id;
+        el('history-more').hidden = entries.length < 20;
+    } catch (error) { if (!historyCursor) row(container, 'History', error.message, 'Storage'); }
+    finally { historyLoading = false; }
+}
+el('history-more').onclick = loadHistory;
+loadHistory();
 poll();
 </script>
 </body>

@@ -111,6 +111,26 @@ class DiscoveryPersistenceTest {
             }
         }
     }
+    @Test void legacyMissingTimestampDoesNotBecomeEpochObservation() throws Exception {
+        String path=temp.resolve("legacy-no-time.db").toString();
+        try(var db=DriverManager.getConnection("jdbc:sqlite:"+path);var sql=db.createStatement()){
+            sql.execute("""
+                    CREATE TABLE nodes(key TEXT PRIMARY KEY,ip TEXT NOT NULL,udp_port INTEGER NOT NULL,
+                    tcp_port INTEGER NOT NULL,node_id TEXT NOT NULL,country TEXT,latency INTEGER,
+                    node_type TEXT,last_seen INTEGER,rpc_available INTEGER,beacon_available INTEGER,
+                    client_version TEXT,syncing INTEGER,block_number INTEGER,pending_transactions INTEGER)
+                    """);
+            sql.execute("INSERT INTO nodes(key,ip,udp_port,tcp_port,node_id,last_seen) VALUES('192.0.2.1:30303','192.0.2.1',30303,30303,'"+"ab".repeat(64)+"',NULL)");
+        }
+        try(var store=new SqliteNodeStore(path)){
+            var identity=new NodeIdentity("ab".repeat(64));
+            assertTrue(store.findObservations(identity).isEmpty());
+            assertTrue(store.inspectionHistory(identity,10,null).isEmpty());
+            try(var db=DriverManager.getConnection("jdbc:sqlite:"+path);var sql=db.createStatement();var rows=sql.executeQuery("SELECT last_seen FROM nodes")){
+                assertTrue(rows.next());assertEquals(null,rows.getObject(1));
+            }
+        }
+    }
     @Test void failedMigrationRollsBackEvidenceAndKeyChanges() throws Exception {
         String path = temp.resolve("migration-rollback.db").toString();
         NodeRecord node = new NodeRecord("192.0.2.1", 30301, 30305, "ab".repeat(64));

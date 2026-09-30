@@ -212,6 +212,7 @@ public class InspectionResult {
         if ("PASS".equals(tcp.get("state"))) node.setP2pConnectMs((Long)tcp.get("durationMs"));
     }
     public NodeRecord node() { return node; }
+    public String id() { return id; }
     public synchronized Map<String, Object> p2p() { return p2p; }
 
     private Map<String, Object> nodeStack() {

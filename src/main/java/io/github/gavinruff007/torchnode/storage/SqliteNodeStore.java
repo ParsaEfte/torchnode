@@ -12,6 +12,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 
 import java.sql.*;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -19,10 +22,11 @@ import java.util.Optional;
 public class SqliteNodeStore implements NodeStore {
     private static final ObjectMapper JSON = new ObjectMapper();
     private Connection connection;
+    private boolean historicalSchemaReady;
     
     public SqliteNodeStore(String dbPath) throws SQLException {
         connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
-        try { initSchema(); }
+        try { try(var statement=connection.createStatement()){statement.execute("PRAGMA foreign_keys=ON");} initSchema(); }
         catch (SQLException | RuntimeException e) {
             try { connection.close(); } catch (SQLException close) { e.addSuppressed(close); }
             throw e;
@@ -84,6 +88,284 @@ public class SqliteNodeStore implements NodeStore {
         migrateDiscoverySchema();
         migrateEnrSchema();
         migrateNetworkEnrichmentSchema();
+        migrateHistoricalSchema();
+        historicalSchemaReady = true;
+    }
+
+    /** Version 4 records each completed inspection while sharing identical evidence payloads. */
+    private void migrateHistoricalSchema() throws SQLException {
+        try (var statement = connection.createStatement();
+             var rows = statement.executeQuery("SELECT 1 FROM schema_migrations WHERE version=4")) {
+            if (rows.next()) return;
+        }
+        connection.setAutoCommit(false);
+        try (var statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE inspection_evidence(hash TEXT PRIMARY KEY, evidence_json TEXT NOT NULL)");
+            statement.execute("""
+                    CREATE TABLE inspection_runs(
+                      id TEXT PRIMARY KEY, node_id TEXT NOT NULL, node_key TEXT NOT NULL,
+                      started_at TEXT, completed_at TEXT, trigger TEXT NOT NULL,
+                      discovery_source TEXT NOT NULL,
+                      evidence_hash TEXT NOT NULL REFERENCES inspection_evidence(hash),
+                      timing_json TEXT NOT NULL)
+                    """);
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_inspection_identity_time ON inspection_runs(node_id, started_at DESC, id DESC)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_inspection_time ON inspection_runs(started_at DESC, id DESC)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_discovery_identity_time ON discovery_observations(node_id, observed_at DESC, id DESC)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_discovery_source_time ON discovery_observations(source, observed_at DESC, id DESC)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_enr_identity_time ON enr_observations(node_id, observed_at DESC, id DESC)");
+            statement.execute("""
+                    CREATE TABLE discovery_endpoint_index(
+                      observation_id INTEGER NOT NULL REFERENCES discovery_observations(id) ON DELETE CASCADE,
+                      node_id TEXT NOT NULL, address TEXT NOT NULL, address_family TEXT NOT NULL,
+                      transport TEXT NOT NULL, purpose TEXT NOT NULL, port INTEGER NOT NULL,
+                      observed_at TEXT NOT NULL,
+                      PRIMARY KEY(observation_id,address,transport,purpose,port))
+                    """);
+            statement.execute("CREATE INDEX idx_discovery_endpoint_time ON discovery_endpoint_index(address,observed_at DESC,observation_id DESC)");
+            try(var rows=statement.executeQuery("SELECT id,node_id,observed_at,endpoints_json FROM discovery_observations")) {
+                while(rows.next()) {
+                    try {
+                        var endpoints=JSON.readValue(rows.getString(4),new TypeReference<List<NodeEndpoint>>() {});
+                        indexEndpoints(rows.getLong(1),rows.getString(2),rows.getString(3),endpoints);
+                    }catch(java.io.IOException e){throw new SQLException("Cannot index persisted discovery endpoints",e);}
+                }
+            }
+            statement.execute("""
+                    CREATE TABLE network_enrichment_lookups(
+                      lookup_id TEXT PRIMARY KEY, address TEXT NOT NULL,
+                      dataset_key TEXT NOT NULL, looked_up_at TEXT NOT NULL,
+                      evidence_json TEXT NOT NULL)
+                    """);
+            try(var rows=statement.executeQuery("SELECT address,dataset_key,looked_up_at,evidence_json FROM network_enrichment")){
+                while(rows.next())try(var insert=connection.prepareStatement("INSERT OR IGNORE INTO network_enrichment_lookups VALUES(?,?,?,?,?)")){
+                    String json=rows.getString(4);insert.setString(1,sha256(json));
+                    insert.setString(2,rows.getString(1));insert.setString(3,rows.getString(2));
+                    insert.setString(4,rows.getString(3));insert.setString(5,json);insert.executeUpdate();
+                }
+            }
+            statement.execute("CREATE INDEX idx_enrichment_address_time ON network_enrichment_lookups(address,looked_up_at DESC)");
+            statement.execute("""
+                    CREATE TABLE inspection_enrichment_context(
+                      run_id TEXT NOT NULL REFERENCES inspection_runs(id),
+                      lookup_id TEXT NOT NULL REFERENCES network_enrichment_lookups(lookup_id),
+                      PRIMARY KEY(run_id,lookup_id))
+                    """);
+            statement.execute("INSERT INTO schema_migrations(version) VALUES(4)");
+            connection.commit();
+        } catch (SQLException | RuntimeException e) { connection.rollback(); throw e; }
+        finally { connection.setAutoCommit(true); }
+    }
+
+    public record InspectionHistory(String id, String nodeId, String nodeKey, String startedAt,
+                                    String completedAt, String trigger, String discoverySource,
+                                    java.util.Map<String,Object> evidence) {}
+    public record EndpointHistory(long observationId,String nodeId,String address,String addressFamily,
+                                  String transport,String purpose,int port,String observedAt,String source,String provenance) {}
+    public record DiscoveryHistory(long id,DiscoveryObservation observation) {}
+    public record EnrHistory(long id,EnrEvidence evidence) {}
+
+    public List<DiscoveryHistory> discoveryHistory(NodeIdentity identity,int limit,long beforeId) {
+        if(!identity.available() || limit<1 || limit>100)throw new IllegalArgumentException("History limit must be 1..100 and identity available");
+        var result=new ArrayList<DiscoveryHistory>();
+        try(var query=connection.prepareStatement("""
+                SELECT d.* FROM discovery_observations d WHERE d.node_id=? AND
+                  (?=0 OR d.observed_at<(SELECT observed_at FROM discovery_observations WHERE id=?) OR
+                  (d.observed_at=(SELECT observed_at FROM discovery_observations WHERE id=?) AND d.id<?))
+                ORDER BY d.observed_at DESC,d.id DESC LIMIT ?
+                """)){
+            query.setString(1,identity.nodeId());query.setLong(2,beforeId);query.setLong(3,beforeId);
+            query.setLong(4,beforeId);query.setLong(5,beforeId);query.setInt(6,limit);
+            try(var rows=query.executeQuery()){while(rows.next())result.add(new DiscoveryHistory(rows.getLong("id"),
+                    new DiscoveryObservation(identity,rows.getString("source"),JSON.readValue(rows.getString("endpoints_json"),
+                            new TypeReference<List<NodeEndpoint>>() {}),Instant.parse(rows.getString("observed_at")),
+                            rows.getString("provenance"))));}
+        }catch(Exception e){throw new IllegalStateException("Cannot load discovery history",e);}
+        return List.copyOf(result);
+    }
+
+    public List<EnrHistory> enrHistory(NodeIdentity identity,int limit,long beforeId) {
+        if(!identity.available() || limit<1 || limit>100)throw new IllegalArgumentException("History limit must be 1..100 and identity available");
+        var result=new ArrayList<EnrHistory>();
+        try(var query=connection.prepareStatement("""
+                SELECT e.* FROM enr_observations e WHERE e.node_id=? AND
+                  (?=0 OR e.observed_at<(SELECT observed_at FROM enr_observations WHERE id=?) OR
+                  (e.observed_at=(SELECT observed_at FROM enr_observations WHERE id=?) AND e.id<?))
+                ORDER BY e.observed_at DESC,e.id DESC LIMIT ?
+                """)){
+            query.setString(1,identity.nodeId());query.setLong(2,beforeId);query.setLong(3,beforeId);
+            query.setLong(4,beforeId);query.setLong(5,beforeId);query.setInt(6,limit);
+            try(var rows=query.executeQuery()){while(rows.next())result.add(new EnrHistory(rows.getLong("id"),
+                    EnrEvidence.fromMap(JSON.readValue(rows.getString("evidence_json"),
+                            new TypeReference<java.util.Map<String,Object>>() {}),JSON)));}
+        }catch(Exception e){throw new IllegalStateException("Cannot load ENR history",e);}
+        return List.copyOf(result);
+    }
+
+    /** Address-indexed factual endpoint occurrences; no disappearance inference is made. */
+    public List<EndpointHistory> endpointHistory(String address,int limit,long beforeObservationId) {
+        if(limit<1 || limit>100)throw new IllegalArgumentException("History limit must be 1..100");
+        String normalized=EndpointAddress.parse(address).getHostAddress();
+        String sql="""
+                SELECT e.*,d.source,d.provenance FROM discovery_endpoint_index e
+                JOIN discovery_observations d ON d.id=e.observation_id
+                WHERE e.address=? AND (?=0 OR e.observed_at<(SELECT observed_at FROM discovery_observations WHERE id=?)
+                  OR (e.observed_at=(SELECT observed_at FROM discovery_observations WHERE id=?) AND e.observation_id<?))
+                ORDER BY e.observed_at DESC,e.observation_id DESC LIMIT ?
+                """;
+        var result=new ArrayList<EndpointHistory>();
+        try(var query=connection.prepareStatement(sql)){
+            query.setString(1,normalized);query.setLong(2,beforeObservationId);query.setLong(3,beforeObservationId);
+            query.setLong(4,beforeObservationId);query.setLong(5,beforeObservationId);query.setInt(6,limit);
+            try(var rows=query.executeQuery()){while(rows.next())result.add(new EndpointHistory(rows.getLong("observation_id"),
+                    rows.getString("node_id"),rows.getString("address"),rows.getString("address_family"),
+                    rows.getString("transport"),rows.getString("purpose"),rows.getInt("port"),
+                    rows.getString("observed_at"),rows.getString("source"),rows.getString("provenance")));}
+        }catch(SQLException e){throw new IllegalStateException("Cannot load endpoint history",e);}
+        return List.copyOf(result);
+    }
+
+    private static String sha256(String value) throws SQLException {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) { throw new SQLException("SHA-256 unavailable", e); }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.Map<String,Object> separateTiming(java.util.Map<String,Object> evidence,
+                                                                 java.util.Map<String,Object> timing) {
+        var facts=JSON.convertValue(evidence,new TypeReference<java.util.Map<String,Object>>() {});
+        var attempts=(List<java.util.Map<String,Object>>)facts.get("endpointAttempts");
+        if(attempts!=null)timing.put("endpointAttemptTimes",attempts.stream().map(a->a.remove("observedAt")).toList());
+        for(String source:List.of("rpcAttempts","beaconAttempts")) {
+            var values=(List<java.util.Map<String,Object>>)facts.get(source);
+            if(values!=null)timing.put(source+"Times",values.stream().map(a->a.remove("attemptedAt")).toList());
+        }
+        for(String source:List.of("rpc","beacon")) {
+            var value=(java.util.Map<String,Object>)facts.get(source);
+            if(value!=null)timing.put(source+"ObservedAt",value.remove("observedAt"));
+        }
+        return facts;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void restoreTiming(java.util.Map<String,Object> evidence,java.util.Map<String,Object> timing) {
+        var attempts=(List<java.util.Map<String,Object>>)evidence.get("endpointAttempts");
+        var times=(List<Object>)timing.get("endpointAttemptTimes");
+        if(attempts!=null && times!=null)for(int i=0;i<Math.min(attempts.size(),times.size());i++)attempts.get(i).put("observedAt",times.get(i));
+        for(String source:List.of("rpcAttempts","beaconAttempts")) {
+            var values=(List<java.util.Map<String,Object>>)evidence.get(source);
+            var stamps=(List<Object>)timing.get(source+"Times");
+            if(values!=null && stamps!=null)for(int i=0;i<Math.min(values.size(),stamps.size());i++)values.get(i).put("attemptedAt",stamps.get(i));
+        }
+        for(String source:List.of("rpc","beacon")) {
+            var value=(java.util.Map<String,Object>)evidence.get(source);
+            if(value!=null && timing.containsKey(source+"ObservedAt"))value.put("observedAt",timing.get(source+"ObservedAt"));
+        }
+    }
+
+    /** One transaction covers the run, its evidence and the latest inspection projection. */
+    public void saveInspectionRun(NodeRecord node, String id, String startedAt, String completedAt,
+                                  java.util.Map<String,Object> evidence, EnrEvidence enr,
+                                  java.util.Map<String,Object> hello, java.util.Map<String,Object> status,
+                                  List<java.util.Map<String,Object>> attempts,
+                                  List<java.util.Map<String,Object>> apis) throws Exception {
+        saveInspectionRun(node,id,startedAt,completedAt,"deep-inspection",evidence,enr,hello,status,attempts,apis);
+    }
+
+    public void saveInspectionRun(NodeRecord node, String id, String startedAt, String completedAt,
+                                  String trigger,java.util.Map<String,Object> evidence, EnrEvidence enr,
+                                  java.util.Map<String,Object> hello, java.util.Map<String,Object> status,
+                                  List<java.util.Map<String,Object>> attempts,
+                                  List<java.util.Map<String,Object>> apis) throws Exception {
+        if (!connection.getAutoCommit()) throw new IllegalStateException("Inspection transaction already active");
+        var timing=new java.util.LinkedHashMap<String,Object>();
+        String json = JSON.writeValueAsString(separateTiming(evidence,timing));
+        String hash = sha256(json);
+        connection.setAutoCommit(false);
+        try {
+            try (var payload = connection.prepareStatement("INSERT OR IGNORE INTO inspection_evidence(hash,evidence_json) VALUES(?,?)")) {
+                payload.setString(1, hash); payload.setString(2, json); payload.executeUpdate();
+            }
+            try (var run = connection.prepareStatement("INSERT INTO inspection_runs(id,node_id,node_key,started_at,completed_at,trigger,discovery_source,evidence_hash,timing_json) VALUES(?,?,?,?,?,?,?,?,?)")) {
+                run.setString(1,id); run.setString(2,node.identity().nodeId()); run.setString(3,node.getKey());
+                run.setString(4,startedAt); run.setString(5,completedAt); run.setString(6,trigger);
+                run.setString(7,node.getDiscoverySource());run.setString(8,hash);
+                run.setString(9,JSON.writeValueAsString(timing)); run.executeUpdate();
+            }
+            update(node);
+            if (enr != null) saveEnrEvidence(enr);
+            if (!attempts.isEmpty() || !apis.isEmpty()) saveEndpointInspection(node.getKey(),hello,status,attempts,apis);
+            connection.commit();
+        } catch (Exception e) { connection.rollback(); throw e; }
+        finally { connection.setAutoCommit(true); }
+    }
+
+    /** Cursor is the last returned run ID; ordering is timestamp then ID, with NULL last. */
+    public List<InspectionHistory> inspectionHistory(NodeIdentity identity, int limit, String beforeId) {
+        if (!identity.available() || limit < 1 || limit > 100) throw new IllegalArgumentException("History limit must be 1..100 and identity available");
+        String sql = """
+                SELECT r.*, e.evidence_json FROM inspection_runs r JOIN inspection_evidence e ON e.hash=r.evidence_hash
+                WHERE r.node_id=? AND (? IS NULL OR
+                  (COALESCE(r.started_at,'') < COALESCE((SELECT started_at FROM inspection_runs WHERE id=?),'') OR
+                   (COALESCE(r.started_at,'') = COALESCE((SELECT started_at FROM inspection_runs WHERE id=?),'') AND r.id < ?)))
+                ORDER BY r.started_at DESC, r.id DESC LIMIT ?
+                """;
+        try (var query = connection.prepareStatement(sql)) {
+            query.setString(1,identity.nodeId()); query.setString(2,beforeId); query.setString(3,beforeId);
+            query.setString(4,beforeId); query.setString(5,beforeId); query.setInt(6,limit);
+            return readInspectionHistory(query);
+        } catch (Exception e) { throw new IllegalStateException("Cannot load inspection history",e); }
+    }
+
+    public List<InspectionHistory> recentInspectionHistory(int limit) {
+        if(limit<1 || limit>100)throw new IllegalArgumentException("History limit must be 1..100");
+        try(var query=connection.prepareStatement("""
+                SELECT r.*,e.evidence_json FROM inspection_runs r JOIN inspection_evidence e ON e.hash=r.evidence_hash
+                ORDER BY r.started_at DESC,r.id DESC LIMIT ?
+                """)){
+            query.setInt(1,limit);return readInspectionHistory(query);
+        }catch(Exception e){throw new IllegalStateException("Cannot load recent inspections",e);}
+    }
+
+    public Optional<InspectionHistory> findInspectionRun(String id) {
+        if(id==null || id.isBlank())return Optional.empty();
+        try(var query=connection.prepareStatement("""
+                SELECT r.*,e.evidence_json FROM inspection_runs r JOIN inspection_evidence e ON e.hash=r.evidence_hash
+                WHERE r.id=? LIMIT 1
+                """)){
+            query.setString(1,id);
+            var rows=readInspectionHistory(query);return rows.isEmpty()?Optional.empty():Optional.of(rows.get(0));
+        }catch(Exception e){throw new IllegalStateException("Cannot load inspection run",e);}
+    }
+
+    public List<InspectionHistory> inspectionHistoryBetween(NodeIdentity identity,Instant fromInclusive,
+                                                             Instant beforeExclusive,int limit) {
+        if(!identity.available() || limit<1 || limit>100 || !fromInclusive.isBefore(beforeExclusive))
+            throw new IllegalArgumentException("Invalid history range or limit");
+        try(var query=connection.prepareStatement("""
+                SELECT r.*,e.evidence_json FROM inspection_runs r JOIN inspection_evidence e ON e.hash=r.evidence_hash
+                WHERE r.node_id=? AND r.started_at>=? AND r.started_at<?
+                ORDER BY r.started_at DESC,r.id DESC LIMIT ?
+                """)){
+            query.setString(1,identity.nodeId());query.setString(2,fromInclusive.toString());
+            query.setString(3,beforeExclusive.toString());query.setInt(4,limit);
+            return readInspectionHistory(query);
+        }catch(Exception e){throw new IllegalStateException("Cannot load ranged inspections",e);}
+    }
+
+    private static List<InspectionHistory> readInspectionHistory(PreparedStatement query) throws Exception {
+        var result=new ArrayList<InspectionHistory>();
+        try(var rows=query.executeQuery()){while(rows.next()){
+            var evidence=JSON.readValue(rows.getString("evidence_json"),new TypeReference<java.util.Map<String,Object>>() {});
+            var timing=JSON.readValue(rows.getString("timing_json"),new TypeReference<java.util.Map<String,Object>>() {});
+            restoreTiming(evidence,timing);
+            result.add(new InspectionHistory(rows.getString("id"),rows.getString("node_id"),rows.getString("node_key"),
+                    rows.getString("started_at"),rows.getString("completed_at"),rows.getString("trigger"),
+                    rows.getString("discovery_source"),evidence));
+        }}
+        return List.copyOf(result);
     }
 
     /** Version 3 adds reusable address/dataset evidence without changing endpoint/identity rows. */
@@ -99,12 +381,46 @@ public class SqliteNodeStore implements NodeStore {
     }
 
     public void saveNetworkEnrichment(io.github.gavinruff007.torchnode.enrichment.NetworkEnrichment evidence) throws SQLException {
-        try(var statement=connection.prepareStatement("INSERT INTO network_enrichment VALUES(?,?,?,?,?) ON CONFLICT(address,dataset_key) DO UPDATE SET address_family=excluded.address_family, looked_up_at=excluded.looked_up_at, evidence_json=excluded.evidence_json")) {
-            statement.setString(1,evidence.address());statement.setString(2,evidence.addressFamily().name());statement.setString(3,evidence.datasetKey());
-            statement.setString(4,evidence.country().lookedUpAt().compareTo(evidence.asn().lookedUpAt())>=0?evidence.country().lookedUpAt():evidence.asn().lookedUpAt());
-            try{statement.setString(5,JSON.writeValueAsString(evidence));}catch(Exception e){throw new SQLException("Cannot encode enrichment",e);}
-            statement.executeUpdate();
+        String time=evidence.country().lookedUpAt().compareTo(evidence.asn().lookedUpAt())>=0?evidence.country().lookedUpAt():evidence.asn().lookedUpAt();
+        String json;
+        try{json=JSON.writeValueAsString(evidence);}catch(Exception e){throw new SQLException("Cannot encode enrichment",e);}
+        boolean own=connection.getAutoCommit();if(own)connection.setAutoCommit(false);
+        try {
+            try(var statement=connection.prepareStatement("INSERT OR IGNORE INTO network_enrichment_lookups(lookup_id,address,dataset_key,looked_up_at,evidence_json) VALUES(?,?,?,?,?)")) {
+                statement.setString(1,sha256(json));statement.setString(2,evidence.address());
+                statement.setString(3,evidence.datasetKey());statement.setString(4,time);
+                statement.setString(5,json);statement.executeUpdate();
+            }
+            try(var statement=connection.prepareStatement("INSERT INTO network_enrichment VALUES(?,?,?,?,?) ON CONFLICT(address,dataset_key) DO UPDATE SET address_family=excluded.address_family, looked_up_at=excluded.looked_up_at, evidence_json=excluded.evidence_json")) {
+                statement.setString(1,evidence.address());statement.setString(2,evidence.addressFamily().name());statement.setString(3,evidence.datasetKey());
+                statement.setString(4,time);statement.setString(5,json);statement.executeUpdate();
+            }
+            if(own)connection.commit();
+        }catch(SQLException e){if(own)connection.rollback();throw e;}
+        finally{if(own)connection.setAutoCommit(true);}
+    }
+
+    /** Attach the exact cached lookup used by an inspection, without changing its observation time. */
+    public void linkInspectionEnrichment(String runId,io.github.gavinruff007.torchnode.enrichment.NetworkEnrichment evidence) throws SQLException {
+        String json;
+        try{json=JSON.writeValueAsString(evidence);}catch(Exception e){throw new SQLException("Cannot encode enrichment",e);}
+        try(var statement=connection.prepareStatement("INSERT OR IGNORE INTO inspection_enrichment_context(run_id,lookup_id) VALUES(?,?)")){
+            statement.setString(1,runId);statement.setString(2,sha256(json));statement.executeUpdate();
         }
+    }
+
+    public List<io.github.gavinruff007.torchnode.enrichment.NetworkEnrichment> inspectionEnrichmentContext(String runId) {
+        var result=new ArrayList<io.github.gavinruff007.torchnode.enrichment.NetworkEnrichment>();
+        try(var query=connection.prepareStatement("""
+                SELECT l.evidence_json FROM inspection_enrichment_context c
+                JOIN network_enrichment_lookups l ON l.lookup_id=c.lookup_id
+                WHERE c.run_id=? ORDER BY l.address,l.dataset_key,l.looked_up_at,l.lookup_id
+                """)){
+            query.setString(1,runId);
+            try(var rows=query.executeQuery()){while(rows.next())result.add(JSON.readValue(rows.getString(1),
+                    io.github.gavinruff007.torchnode.enrichment.NetworkEnrichment.class));}
+        }catch(Exception e){throw new IllegalStateException("Cannot load inspection enrichment context",e);}
+        return List.copyOf(result);
     }
 
     public Optional<io.github.gavinruff007.torchnode.enrichment.NetworkEnrichment> findNetworkEnrichment(String address,String datasetKey) {
@@ -157,10 +473,12 @@ public class SqliteNodeStore implements NodeStore {
                     while (rows.next()) {
                         NodeRecord node = new NodeRecord(rows.getString("ip"), rows.getInt("udp_port"),
                                 rows.getInt("tcp_port"), rows.getString("node_id"));
-                        node.setLastSeen(Instant.ofEpochSecond(rows.getLong("last_seen")));
+                        long legacyLastSeen=rows.getLong("last_seen");
+                        boolean hasObservedTime=!rows.wasNull() && legacyLastSeen>0;
+                        if(hasObservedTime)node.setLastSeen(Instant.ofEpochSecond(legacyLastSeen));
                         // Preserve raw legacy IDs in nodes; normalized identity is used only for keys/evidence.
                         keys.add(new String[] { rows.getString("key"), node.getKey() });
-                        insertObservation(legacyObservation(node));
+                        if(hasObservedTime)insertObservation(legacyObservation(node));
                     }
                 }
                 for (String[] key : keys) {
@@ -269,6 +587,24 @@ public class SqliteNodeStore implements NodeStore {
             try { insert.setString(5, JSON.writeValueAsString(observation.endpoints())); }
             catch (Exception e) { throw new SQLException("Cannot serialize endpoint evidence", e); }
             insert.executeUpdate();
+        }
+        if(historicalSchemaReady)try(var query=connection.prepareStatement("SELECT id FROM discovery_observations WHERE node_id=? AND source=? AND provenance=? AND observed_at=? AND endpoints_json=?")) {
+            query.setString(1,observation.identity().nodeId());query.setString(2,observation.source());query.setString(3,observation.provenance());
+            query.setString(4,observation.observedAt().toString());
+            try{query.setString(5,JSON.writeValueAsString(observation.endpoints()));}catch(Exception e){throw new SQLException("Cannot serialize endpoint evidence",e);}
+            try(var rows=query.executeQuery()){if(rows.next())indexEndpoints(rows.getLong(1),observation.identity().nodeId(),observation.observedAt().toString(),observation.endpoints());}
+        }
+    }
+
+    private void indexEndpoints(long observationId,String nodeId,String observedAt,List<NodeEndpoint> endpoints) throws SQLException {
+        try(var insert=connection.prepareStatement("INSERT OR IGNORE INTO discovery_endpoint_index VALUES(?,?,?,?,?,?,?,?)")){
+            for(var endpoint:endpoints){
+                insert.setLong(1,observationId);insert.setString(2,nodeId);insert.setString(3,endpoint.address());
+                insert.setString(4,endpoint.addressFamily().name());insert.setString(5,endpoint.transport().name());
+                insert.setString(6,endpoint.purpose().name());insert.setInt(7,endpoint.port());insert.setString(8,observedAt);
+                insert.addBatch();
+            }
+            insert.executeBatch();
         }
     }
 
@@ -392,9 +728,13 @@ public class SqliteNodeStore implements NodeStore {
                 node_id = excluded.node_id,
                 discovery_source = excluded.discovery_source,
                 last_seen = excluded.last_seen
-            WHERE (excluded.last_seen >= nodes.last_seen
+            WHERE ((excluded.last_seen > COALESCE(nodes.last_seen,-1)
+                OR (excluded.last_seen = nodes.last_seen AND
+                    (excluded.tcp_port > nodes.tcp_port OR
+                     (excluded.tcp_port = nodes.tcp_port AND excluded.node_id > nodes.node_id))))
                 AND (nodes.discovery_source != 'discv4' OR excluded.discovery_source != 'discv5'))
-                OR (nodes.discovery_source = 'discv5' AND excluded.discovery_source = 'discv4')
+                OR (nodes.discovery_source = 'discv5' AND excluded.discovery_source = 'discv4'
+                    AND excluded.last_seen IS NOT NULL)
         """;
         
         Savepoint savepoint = null;
@@ -404,7 +744,8 @@ public class SqliteNodeStore implements NodeStore {
             if (ownTransaction) connection.setAutoCommit(false);
             savepoint = connection.setSavepoint();
             for (DiscoveryObservation observation : node.getObservations().isEmpty()
-                    ? List.of(legacyObservation(node)) : node.getObservations()) insertObservation(observation);
+                    ? node.getLastSeen()==null?List.<DiscoveryObservation>of():List.of(legacyObservation(node))
+                    : node.getObservations()) insertObservation(observation);
             try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
                 pstmt.setString(1, node.getKey());
                 pstmt.setString(2, node.getIp());
@@ -414,7 +755,7 @@ public class SqliteNodeStore implements NodeStore {
                 pstmt.setString(6, node.getCountry());
                 pstmt.setObject(7, node.getLatency());
                 pstmt.setString(8, node.getNodeType().name());
-                pstmt.setLong(9, node.getLastSeen().getEpochSecond());
+                pstmt.setObject(9, node.getLastSeen()==null?null:node.getLastSeen().getEpochSecond());
                 pstmt.setInt(10, node.isRpcAvailable() ? 1 : 0);
                 pstmt.setInt(11, node.isBeaconAvailable() ? 1 : 0);
                 pstmt.setString(12, node.getClientVersion());
@@ -427,8 +768,8 @@ public class SqliteNodeStore implements NodeStore {
                 pstmt.executeUpdate();
             }
             // A discv5 receipt updates liveness time without replacing a selected discv4 endpoint.
-            if (node.getDiscoverySource().equals("discv5")) try (PreparedStatement seen = connection.prepareStatement(
-                    "UPDATE nodes SET last_seen = MAX(last_seen, ?) WHERE key = ?")) {
+            if (node.getDiscoverySource().equals("discv5") && node.getLastSeen()!=null) try (PreparedStatement seen = connection.prepareStatement(
+                    "UPDATE nodes SET last_seen = MAX(COALESCE(last_seen,-1), ?) WHERE key = ?")) {
                 seen.setLong(1, node.getLastSeen().getEpochSecond()); seen.setString(2, node.getKey()); seen.executeUpdate();
             }
             connection.releaseSavepoint(savepoint);
@@ -476,11 +817,12 @@ public class SqliteNodeStore implements NodeStore {
     
     @Override
     public Optional<NodeRecord> findByKey(String key) {
-        String sql = "SELECT * FROM nodes WHERE key = ? OR ip || ':' || udp_port = ? ORDER BY last_seen DESC LIMIT 1";
+        String sql = "SELECT * FROM nodes WHERE key = ? OR ip || ':' || udp_port = ? ORDER BY (key = ?) DESC,last_seen DESC,key DESC LIMIT 1";
         
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
             pstmt.setString(1, key);
             pstmt.setString(2, key);
+            pstmt.setString(3, key);
             ResultSet rs = pstmt.executeQuery();
             
             if (rs.next()) {
@@ -497,7 +839,7 @@ public class SqliteNodeStore implements NodeStore {
     @Override
     public List<NodeRecord> findAll() {
         List<NodeRecord> nodes = new ArrayList<>();
-        String sql = "SELECT * FROM nodes ORDER BY last_seen DESC";
+        String sql = "SELECT * FROM nodes ORDER BY last_seen DESC,key DESC";
         
         try (Statement stmt = connection.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
@@ -600,6 +942,11 @@ public class SqliteNodeStore implements NodeStore {
         connection.setAutoCommit(false);
         try (Statement statement = connection.createStatement()) {
             statement.executeUpdate("DELETE FROM enr_observations");
+            statement.executeUpdate("DELETE FROM discovery_endpoint_index");
+            statement.executeUpdate("DELETE FROM inspection_enrichment_context");
+            statement.executeUpdate("DELETE FROM inspection_runs");
+            statement.executeUpdate("DELETE FROM inspection_evidence");
+            statement.executeUpdate("DELETE FROM network_enrichment_lookups");
             statement.executeUpdate("DELETE FROM discovery_observations");
             statement.executeUpdate("DELETE FROM p2p_observations");
             statement.executeUpdate("DELETE FROM nodes");
@@ -678,7 +1025,7 @@ public class SqliteNodeStore implements NodeStore {
             node.setNodeType(NodeType.valueOf(typeStr));
         }
         
-        node.setLastSeen(Instant.ofEpochSecond(rs.getLong("last_seen")));
+        long lastSeen=rs.getLong("last_seen");node.setLastSeen(rs.wasNull() || lastSeen<=0?null:Instant.ofEpochSecond(lastSeen));
         node.setRpcAvailable(rs.getInt("rpc_available") == 1);
         node.setBeaconAvailable(rs.getInt("beacon_available") == 1);
         node.setClientVersion(rs.getString("client_version"));

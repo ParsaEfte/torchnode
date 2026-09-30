@@ -7,6 +7,13 @@ Cryptographic node identities are separate from endpoint observations, whose
 source, provenance and timestamps are retained in SQLite. See the
 [discovery architecture decision](docs/adr/discovery-architecture.md).
 
+Completed deep inspections and background API scans are now retained as
+measurement occurrences, with bounded identity history in Deep Inspection.
+Repeated identical evidence shares stored payloads while each attempt keeps
+its own time and outcome. Existing node rows remain the latest projection;
+history records factual observations, not inferred changes. See the
+[historical observations ADR](docs/adr/historical-observations.md).
+
 TorchNode acquires and validates real ENRs over discv4 and discv5, preserving raw records,
 sequence, unknown fields and advertised endpoints independently of discovery
 and P2P evidence. Trusted IPv4 and IPv6 endpoints support active discovery and
@@ -97,7 +104,8 @@ records a peer's advertised `snap/1` capability. ETH/69–72 Status provides
 network ID, execution genesis hash, fork ID, and the available full-block range
 (`earliest`, `latest`, `latestHash`), but no
 total difficulty. Authenticated Hello and Status observations are retained in
-the `p2p_observations` SQLite table.
+the `p2p_observations` latest SQLite projection and in completed inspection
+history.
 The pinned go-ethereum release exposes ETH/69–72, not ETH/68. An ETH/68-only
 peer can complete Auth and Hello, but ETH Status remains `NOT_TESTED` with
 `NO_COMPATIBLE_ETH_CAPABILITY`; TorchNode does not fabricate an ETH/68 Status.

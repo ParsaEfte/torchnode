@@ -56,6 +56,10 @@ public class DashboardServlet extends HttpServlet {
             inspectionStatus(request, response);
             return;
         }
+        if ("/inspection/history".equals(request.getServletPath())) {
+            inspectionHistory(request, response);
+            return;
+        }
         if (!"/".equals(request.getServletPath())) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND);
             return;
@@ -184,6 +188,19 @@ public class DashboardServlet extends HttpServlet {
         response.setContentType("application/json;charset=UTF-8");
         response.setHeader("Cache-Control", "no-store");
         objectMapper.writeValue(response.getWriter(), snapshot.get());
+    }
+
+    private void inspectionHistory(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String key=normalize(request.getParameter("key"));
+        if(key==null){response.sendError(HttpServletResponse.SC_BAD_REQUEST);return;}
+        int limit=Math.min(50,positiveInt(request.getParameter("limit"),20));
+        try(var store=new SqliteNodeStore(databasePath)) {
+            var node=store.findByKey(key);
+            if(node.isEmpty()){response.sendError(HttpServletResponse.SC_NOT_FOUND);return;}
+            var history=store.inspectionHistory(node.get().identity(),limit,normalize(request.getParameter("before")));
+            response.setContentType("application/json;charset=UTF-8");
+            objectMapper.writeValue(response.getWriter(),history);
+        } catch(Exception e){throw new IOException("Unable to load inspection history",e);}
     }
 
     private void exportCsv(HttpServletResponse response) throws IOException {

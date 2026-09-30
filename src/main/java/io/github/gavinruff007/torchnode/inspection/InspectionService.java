@@ -284,22 +284,27 @@ public class InspectionService implements AutoCloseable {
             else if (node.isBeaconAvailable()) node.setNodeType(NodeType.CONSENSUS);
             if (error != null) result.event("Inspection partially completed", concise(error));
             try (NodeStore store = new SqliteNodeStore(databasePath)) {
-                store.update(node);
-                if (store instanceof SqliteNodeStore sqlite && result.enrEvidence() != null)
-                    sqlite.saveEnrEvidence(result.enrEvidence());
-                if (store instanceof SqliteNodeStore sqlite && (!result.endpointAttempts().isEmpty() || !result.apiEndpointEvidence().isEmpty())) {
-                    var p2p = result.p2p();
-                    @SuppressWarnings("unchecked") Map<String,Object> hello = p2p == null ? null : (Map<String,Object>)p2p.get("hello");
-                    @SuppressWarnings("unchecked") Map<String,Object> status = p2p == null ? null : (Map<String,Object>)p2p.get("status");
-                    sqlite.saveEndpointInspection(node.getKey(), hello, status, result.endpointAttempts(), result.apiEndpointEvidence());
-                }
+                var snapshot=result.snapshot();
+                var evidence=new LinkedHashMap<String,Object>();
+                for(String field:List.of("endpointAttempts","diagnostics","p2p","rpc","beacon",
+                        "rpcProbeEndpoints","beaconProbeEndpoints"))evidence.put(field,snapshot.get(field));
+                evidence.put("inspectionError",error==null?null:concise(error));
+                var p2p = result.p2p();
+                @SuppressWarnings("unchecked") Map<String,Object> hello = p2p == null ? null : (Map<String,Object>)p2p.get("hello");
+                @SuppressWarnings("unchecked") Map<String,Object> status = p2p == null ? null : (Map<String,Object>)p2p.get("status");
+                ((SqliteNodeStore)store).saveInspectionRun(node,result.id(),(String)snapshot.get("startedAt"),
+                        java.time.Instant.now().toString(),evidence,result.enrEvidence(),hello,status,
+                        result.endpointAttempts(),result.apiEndpointEvidence());
                 if(store instanceof SqliteNodeStore sqlite) {
                     var view=sqlite.networkEnrichmentView(node.identity());result.loadNetworkEnrichment(view);
                     for(var address:view.stream().map(v->((io.github.gavinruff007.torchnode.model.NodeEndpoint)v.get("endpoint")).address()).distinct().toList())
                         enrichment.request(address).thenAccept(value->{
                             synchronized(persistenceLock) {
                                 if(closed || generation!=startedGeneration)return;
-                                try(var enrichedStore=new SqliteNodeStore(databasePath)){result.loadNetworkEnrichment(enrichedStore.networkEnrichmentView(node.identity()));}
+                                try(var enrichedStore=new SqliteNodeStore(databasePath)){
+                                    enrichedStore.linkInspectionEnrichment(result.id(),value);
+                                    result.loadNetworkEnrichment(enrichedStore.networkEnrichmentView(node.identity()));
+                                }
                                 catch(Exception ignored){} // Independent enrichment must never fail protocol inspection.
                             }
                         });

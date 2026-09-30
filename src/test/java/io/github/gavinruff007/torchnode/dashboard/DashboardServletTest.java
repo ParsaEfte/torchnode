@@ -139,6 +139,10 @@ class DashboardServletTest {
                 NodeRecord stored = store.findByKey(node.getKey()).orElseThrow();
                 assertTrue(stored.isRpcAvailable()); assertTrue(stored.isBeaconAvailable());
                 assertEquals(NodeType.FULL_NODE, stored.getNodeType());
+                var history=store.inspectionHistory(node.identity(),10,null);
+                assertEquals(1,history.size());
+                assertTrue(history.get(0).evidence().get("rpc") != null);
+                assertTrue(history.get(0).evidence().get("beacon") != null);
             }
             var attributes = new java.util.HashMap<String, Object>();
             var csv = new java.io.StringWriter();
@@ -170,5 +174,34 @@ class DashboardServletTest {
             assertTrue(csv.toString().contains("30301")); assertTrue(csv.toString().contains("ab".repeat(64)));
             assertTrue(csv.toString().contains("Geth/v1.17/test"));
         } finally { rpc.stop(0); beacon.stop(0); }
+    }
+
+    @Test void historyHttpResponseAgreesWithBoundedRepositoryQuery() throws Exception {
+        String path=tempDir.resolve("history-ui.db").toString();
+        var node=new NodeRecord("192.0.2.5",30303,30303,"ab".repeat(64));
+        try(var store=new SqliteNodeStore(path)) {
+            store.save(node);
+            for(int i=0;i<3;i++)store.saveInspectionRun(node,"run-"+i,"2026-01-0"+(i+1)+"T00:00:00Z",
+                    "2026-01-0"+(i+1)+"T00:00:01Z",java.util.Map.of("diagnostics",java.util.List.of(
+                            java.util.Map.of("name","P2P TCP","state",i==2?"FAILED":"PASS"))),
+                    null,null,null,java.util.List.of(),java.util.List.of());
+        }
+        try(var inspections=new InspectionService(path)) {
+            var servlet=new DashboardServlet(path,new ScannerService(path),inspections);
+            var out=new java.io.StringWriter();var writer=new java.io.PrintWriter(out);
+            HttpServletResponse response=(HttpServletResponse)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{HttpServletResponse.class},(proxy,method,args)->"getWriter".equals(method.getName())?writer:null);
+            HttpServletRequest request=(HttpServletRequest)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{HttpServletRequest.class},(proxy,method,args)->switch(method.getName()){
+                        case "getServletPath" -> "/inspection/history";
+                        case "getParameter" -> switch((String)args[0]){case "key" -> node.getKey();case "limit" -> "2";default -> null;};
+                        default -> null;
+                    });
+            servlet.doGet(request,response);writer.flush();
+            var rows=new com.fasterxml.jackson.databind.ObjectMapper().readTree(out.toString());
+            assertEquals(2,rows.size());assertEquals("run-2",rows.get(0).path("id").asText());
+            assertEquals("FAILED",rows.get(0).path("evidence").path("diagnostics").get(0).path("state").asText());
+            try(var store=new SqliteNodeStore(path)) {assertEquals(store.inspectionHistory(node.identity(),2,null).get(1).id(),rows.get(1).path("id").asText());}
+        }
     }
 }

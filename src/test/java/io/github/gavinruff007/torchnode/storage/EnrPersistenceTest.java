@@ -29,6 +29,9 @@ class EnrPersistenceTest {
         }
         try (var store = new SqliteNodeStore(path)) {
             assertEquals(List.of(newer, older, invalid), store.findEnrEvidence(node.identity()));
+            var recent=store.enrHistory(node.identity(),1,0);
+            assertEquals(invalid,recent.get(0).evidence());
+            assertEquals(newer,store.enrHistory(node.identity(),1,recent.get(0).id()).get(0).evidence());
             assertEquals(List.of(mismatched), store.findEnrEvidence(mismatched.associatedIdentity()));
             assertEquals(30305, store.findByKey(node.getKey()).orElseThrow().getP2pEndpoint().port());
             var discovery = store.findObservations(node.identity());
@@ -63,7 +66,7 @@ class EnrPersistenceTest {
         }
         try (var db = DriverManager.getConnection("jdbc:sqlite:" + path); var sql = db.createStatement()) {
             try (var rows = sql.executeQuery("SELECT hello_json FROM p2p_observations")) { assertTrue(rows.next()); assertEquals("{\"listenPort\":0}", rows.getString(1)); }
-            try (var rows = sql.executeQuery("SELECT COUNT(*) FROM schema_migrations")) { assertTrue(rows.next()); assertEquals(3, rows.getInt(1)); }
+            try (var rows = sql.executeQuery("SELECT COUNT(*) FROM schema_migrations")) { assertTrue(rows.next()); assertEquals(4, rows.getInt(1)); }
             try (var rows = sql.executeQuery("PRAGMA integrity_check")) { assertTrue(rows.next()); assertEquals("ok", rows.getString(1)); }
         }
     }

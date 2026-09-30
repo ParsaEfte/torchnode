@@ -51,7 +51,7 @@ public class ScanDaemon {
 
                 while (running) {
                     provider.discover(observation -> {
-                        nodeStore.saveObservation(observation);
+                        synchronized(nodeStore){nodeStore.saveObservation(observation);}
                         observation.endpoints().forEach(endpoint->enrichment.request(endpoint.address()));
                         if (observation.source().equals("discv4")) enrAcquirer.acquire(new NodeRecord(observation), evidence -> {
                             if (evidence.outcome().equals("BUSY")) return;
@@ -60,13 +60,13 @@ public class ScanDaemon {
                         });
                     });
                     provider.drainEnrEvidence(evidence -> {
-                        try { ((SqliteNodeStore)nodeStore).saveEnrEvidence(evidence); if(evidence.usable())evidence.record().endpoints().forEach(endpoint->enrichment.request(endpoint.address())); }
+                        try { synchronized(nodeStore){((SqliteNodeStore)nodeStore).saveEnrEvidence(evidence);} if(evidence.usable())evidence.record().endpoints().forEach(endpoint->enrichment.request(endpoint.address())); }
                         catch (SQLException e) { throw new IllegalStateException("Cannot persist provider ENR", e); }
                     });
                     if (!running) break;
                     if (inspectionThread == null || !inspectionThread.isAlive()) {
                         inspectionThread = new Thread(() -> {
-                            try (NodeStore inspectionStore = new SqliteNodeStore(databasePath)) { inspectNewNodes(inspectionStore); }
+                    try (NodeStore inspectionStore = new SqliteNodeStore(databasePath)) { inspectNewNodes(inspectionStore); }
                             catch (Exception e) { System.err.println("[Inspect] " + e.getMessage()); }
                         }, "scanner-api-inspection");
                         inspectionThread.setDaemon(true); inspectionThread.start();
@@ -138,8 +138,10 @@ public class ScanDaemon {
                 CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                     String key = node.getKey() + ":tcp=" + node.getP2pEndpoint().port();
                     try {
-                        NodeRecord inspected = nodeInspector.inspect(node, System.nanoTime() + TimeUnit.SECONDS.toNanos(INSPECT_TIMEOUT_SECONDS));
-                        nodeStore.update(inspected);
+                        var measurement = nodeInspector.inspectMeasurement(node, System.nanoTime() + TimeUnit.SECONDS.toNanos(INSPECT_TIMEOUT_SECONDS));
+                        synchronized(nodeStore){((SqliteNodeStore)nodeStore).saveInspectionRun(measurement.node(),UUID.randomUUID().toString(),
+                                measurement.startedAt(),measurement.completedAt(),"background-scan",measurement.evidence(),
+                                null,null,null,List.of(),List.of());}
                         inspectedNodes.add(key);
                         System.out.println("[Inspect] Success: " + key);
 
