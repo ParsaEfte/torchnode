@@ -7,6 +7,7 @@ import io.github.gavinruff007.torchnode.storage.SqliteNodeStore;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.RequestDispatcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,6 +23,126 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class DashboardServletTest {
     @TempDir Path tempDir;
+
+    @Test
+    void analyticsJsonSerializesUtcScopeAndMatchesDirectQuery() throws Exception {
+        String path=tempDir.resolve("analytics-http.db").toString();
+        try(var store=new SqliteNodeStore(path)) {
+            var node=new NodeRecord("192.0.2.1",30303,30303,"ab".repeat(64));
+            node.setLastSeen(Instant.parse("2026-01-01T00:00:00Z"));store.save(node);
+        }
+        var service=new InspectionService(path);
+        try {
+            var servlet=new DashboardServlet(path,new ScannerService(path),service);
+            var body=new java.io.StringWriter();var writer=new java.io.PrintWriter(body);
+            HttpServletRequest request=(HttpServletRequest)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{HttpServletRequest.class},(proxy,method,args)->switch(method.getName()) {
+                        case "getServletPath" -> "/analytics.json";
+                        case "getParameter" -> "start".equals(args[0])?"2026-01-01T00:00:00Z":
+                                "end".equals(args[0])?"2026-01-02T00:00:00Z":null;
+                        default -> null;
+                    });
+            HttpServletResponse response=(HttpServletResponse)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{HttpServletResponse.class},(proxy,method,args)->
+                            "getWriter".equals(method.getName())?writer:null);
+            servlet.doGet(request,response);writer.flush();
+            var json=new com.fasterxml.jackson.databind.ObjectMapper().readTree(body.toString());
+            assertEquals("2026-01-01T00:00:00Z",json.path("scope").path("startInclusive").asText());
+            assertEquals("WINDOW",json.path("scope").path("mode").asText());
+            long direct=new io.github.gavinruff007.torchnode.analysis.NetworkAnalytics(path).measure(
+                    new io.github.gavinruff007.torchnode.analysis.NetworkAnalytics.Scope(
+                            Instant.parse("2026-01-01T00:00:00Z"),Instant.parse("2026-01-02T00:00:00Z")))
+                    .metrics().stream().filter(m->m.id().equals("observed-identities")).findFirst().orElseThrow().denominator();
+            assertEquals(direct,json.path("metrics").get(0).path("denominator").asLong());
+            var attributes=new java.util.HashMap<String,Object>();
+            var rendered=new AtomicReference<String>();
+            RequestDispatcher dispatcher=(RequestDispatcher)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{RequestDispatcher.class},(proxy,method,args)->{
+                        if("forward".equals(method.getName())) {
+                            var report=(io.github.gavinruff007.torchnode.analysis.NetworkAnalytics.Report)attributes.get("analytics");
+                            rendered.set(report.metrics().get(0).denominator()+":"+report.scope().startInclusive());
+                        }
+                        return null;
+                    });
+            HttpServletRequest html=(HttpServletRequest)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{HttpServletRequest.class},(proxy,method,args)->switch(method.getName()) {
+                        case "getServletPath" -> "/analytics";
+                        case "getParameter" -> "start".equals(args[0])?"2026-01-01T00:00:00Z":
+                                "end".equals(args[0])?"2026-01-02T00:00:00Z":null;
+                        case "setAttribute" -> { attributes.put((String)args[0],args[1]);yield null; }
+                        case "getRequestDispatcher" -> dispatcher;
+                        default -> null;
+                    });
+            servlet.doGet(html,response);
+            assertEquals(direct+":2026-01-01T00:00:00Z",rendered.get());
+        } finally { service.close(); }
+    }
+
+    @Test
+    void clearWaitsForInFlightAnalyticsResponseAndNextQueryIsEmpty() throws Exception {
+        String path=tempDir.resolve("analytics-clear.db").toString();
+        try(var store=new SqliteNodeStore(path)) {
+            var node=new NodeRecord("192.0.2.1",30303,30303,"ab".repeat(64));
+            node.setLastSeen(Instant.parse("2026-01-01T00:00:00Z"));store.save(node);
+        }
+        var scanner=new ScannerService(path);var inspection=new InspectionService(path);
+        try {
+            var servlet=new DashboardServlet(path,scanner,inspection);
+            var writing=new java.util.concurrent.CountDownLatch(1);
+            var release=new java.util.concurrent.CountDownLatch(1);
+            var clearEntered=new java.util.concurrent.CountDownLatch(1);
+            var completed=new java.util.concurrent.CountDownLatch(1);
+            var failure=new AtomicReference<Throwable>();
+            var blockingWriter=new java.io.PrintWriter(new java.io.Writer() {
+                @Override public void write(char[] chars,int offset,int length) throws java.io.IOException {
+                    writing.countDown();
+                    try { release.await(); } catch(InterruptedException e) { Thread.currentThread().interrupt();throw new java.io.IOException(e); }
+                }
+                @Override public void flush() { }
+                @Override public void close() { }
+            });
+            HttpServletRequest analytics=(HttpServletRequest)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{HttpServletRequest.class},(proxy,method,args)->switch(method.getName()) {
+                        case "getServletPath" -> "/analytics.json";
+                        case "getParameter" -> "start".equals(args[0])?"2026-01-01T00:00:00Z":
+                                "end".equals(args[0])?"2026-01-02T00:00:00Z":null;
+                        default -> null;
+                    });
+            HttpServletResponse analyticsResponse=(HttpServletResponse)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{HttpServletResponse.class},(proxy,method,args)->"getWriter".equals(method.getName())?blockingWriter:null);
+            var queryThread=new Thread(()->{try {servlet.doGet(analytics,analyticsResponse);}catch(Throwable t){failure.set(t);}});
+            queryThread.start();
+            assertTrue(writing.await(10,java.util.concurrent.TimeUnit.SECONDS));
+            HttpSession session=(HttpSession)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{HttpSession.class},(proxy,method,args)->"getAttribute".equals(method.getName())?"token":null);
+            HttpServletRequest clear=(HttpServletRequest)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{HttpServletRequest.class},(proxy,method,args)->switch(method.getName()) {
+                        case "getServletPath" -> "/data/clear";
+                        case "getParameter" -> "csrf".equals(args[0])?"token":null;
+                        case "getSession" -> session;
+                        default -> null;
+                    });
+            HttpServletResponse clearResponse=(HttpServletResponse)Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class[]{HttpServletResponse.class},(proxy,method,args)->null);
+            var clearThread=new Thread(()->{clearEntered.countDown();try {servlet.doPost(clear,clearResponse);}catch(Throwable t){failure.set(t);}finally{completed.countDown();}});
+            clearThread.start();
+            assertTrue(clearEntered.await(10,java.util.concurrent.TimeUnit.SECONDS));
+            long blockedDeadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+            while(clearThread.getState()!=Thread.State.BLOCKED && System.nanoTime()<blockedDeadline)
+                Thread.onSpinWait();
+            assertEquals(Thread.State.BLOCKED,clearThread.getState());
+            assertEquals(queryThread.getId(),java.lang.management.ManagementFactory.getThreadMXBean()
+                    .getThreadInfo(clearThread.getId()).getLockOwnerId());
+            assertEquals(1,completed.getCount());
+            release.countDown();queryThread.join(10_000);clearThread.join(10_000);
+            assertTrue(!queryThread.isAlive() && !clearThread.isAlive());
+            assertEquals(null,failure.get());
+            assertEquals(0,new io.github.gavinruff007.torchnode.analysis.NetworkAnalytics(path).measure(
+                    new io.github.gavinruff007.torchnode.analysis.NetworkAnalytics.Scope(
+                            Instant.parse("2026-01-01T00:00:00Z"),Instant.parse("2026-01-02T00:00:00Z")))
+                    .metrics().get(0).denominator());
+        } finally { inspection.close();scanner.stop(); }
+    }
 
     @Test
     void clearRequiresPostAndResetsCachedInspectionResults() throws Exception {

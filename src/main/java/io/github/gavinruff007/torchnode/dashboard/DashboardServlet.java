@@ -1,7 +1,12 @@
 package io.github.gavinruff007.torchnode.dashboard;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonSerializer;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.core.JsonGenerator;
 import io.github.gavinruff007.torchnode.enr.EnrEvidence;
+import io.github.gavinruff007.torchnode.analysis.NetworkAnalytics;
 import io.github.gavinruff007.torchnode.inspection.InspectionService;
 import io.github.gavinruff007.torchnode.model.NodeRecord;
 import io.github.gavinruff007.torchnode.model.NodeType;
@@ -15,6 +20,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
@@ -31,7 +37,17 @@ public class DashboardServlet extends HttpServlet {
     private final String databasePath;
     private final ScannerService scannerService;
     private final InspectionService inspectionService;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = analyticsMapper();
+
+    private static ObjectMapper analyticsMapper() {
+        var module=new SimpleModule();
+        module.addSerializer(Instant.class,new JsonSerializer<Instant>() {
+            @Override public void serialize(Instant value,JsonGenerator generator,SerializerProvider provider) throws IOException {
+                generator.writeString(value.toString());
+            }
+        });
+        return new ObjectMapper().registerModule(module);
+    }
 
     public DashboardServlet(String databasePath, ScannerService scannerService,
                             InspectionService inspectionService) {
@@ -46,6 +62,19 @@ public class DashboardServlet extends HttpServlet {
         response.setHeader("Cache-Control", "no-store");
         if ("/export.csv".equals(request.getServletPath())) {
             exportCsv(response);
+            return;
+        }
+        if ("/analytics".equals(request.getServletPath()) || "/analytics.json".equals(request.getServletPath())) {
+            showAnalytics(request,response);
+            return;
+        }
+        if ("/analytics/snapshot.json".equals(request.getServletPath())) {
+            try {
+                synchronized(scannerService) {
+                    response.setContentType("application/json;charset=UTF-8");
+                    objectMapper.writeValue(response.getWriter(),new NetworkAnalytics(databasePath).snapshot());
+                }
+            } catch(Exception e) { throw new ServletException("Unable to load latest projection snapshot",e); }
             return;
         }
         if ("/node".equals(request.getServletPath())) {
@@ -124,6 +153,34 @@ public class DashboardServlet extends HttpServlet {
         } catch (Exception e) {
             throw new ServletException("Unable to load dashboard data", e);
         }
+    }
+
+    private void showAnalytics(HttpServletRequest request,HttpServletResponse response)
+            throws ServletException,IOException {
+        try {
+            Instant end=request.getParameter("end")==null?Instant.now():Instant.parse(request.getParameter("end"));
+            Instant start=request.getParameter("start")==null?end.minus(1,ChronoUnit.DAYS):Instant.parse(request.getParameter("start"));
+            var scope="all".equals(request.getParameter("mode"))?NetworkAnalytics.Scope.allAvailable():
+                    new NetworkAnalytics.Scope(start,end);
+            synchronized(scannerService) {
+                var report=new NetworkAnalytics(databasePath).measure(scope);
+                if("/analytics.json".equals(request.getServletPath())) {
+                    response.setContentType("application/json;charset=UTF-8");
+                    objectMapper.writeValue(response.getWriter(),report);
+                } else {
+                    request.setAttribute("analytics",report);
+                    request.setAttribute("analyticsSnapshot",new NetworkAnalytics(databasePath).snapshot());
+                    request.getRequestDispatcher("/WEB-INF/views/analytics.jsp").forward(request,response);
+                }
+            }
+        } catch(IllegalArgumentException e) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST,"Invalid analytics window (maximum 31 days)");
+        } catch(SQLException e) {
+            if(e.getMessage()!=null && (e.getMessage().contains("evidence-row safety limit") ||
+                    e.getMessage().contains("25,000 inspections")))
+                response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE,e.getMessage());
+            else throw new ServletException("Unable to measure network observations",e);
+        } catch(Exception e) { throw new ServletException("Unable to measure network observations",e); }
     }
 
     @Override

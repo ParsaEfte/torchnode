@@ -130,6 +130,7 @@
     <header>
         <div><div class="eyebrow">Ethereum network intelligence</div><h1>TorchNode Observatory</h1></div>
         <div class="header-actions">
+            <a class="button secondary" href="/analytics">Network Analytics</a>
             <div class="live <%= scannerRunning ? "good" : "muted" %>"><span class="pulse"></span><%= scannerRunning ? "Scanner running" : "Scanner stopped" %></div>
             <a class="button secondary" href="/export.csv">Export CSV</a>
             <form class="action-form" method="post" action="/scanner/<%= scannerRunning ? "stop" : "start" %>">

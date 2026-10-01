@@ -50,6 +50,8 @@ java -jar target/torchnode-1.0-SNAPSHOT-jar-with-dependencies.jar
 
 Open `http://localhost:8080`. Scanning, stopping, inspection, filtering, statistics, and CSV export are available in the dashboard.
 
+`/analytics` provides a bounded UTC measurement window over recorded observations, with explicit counting units, denominators, and unknown evidence. `/analytics.json` exposes the same internal report; `/analytics/snapshot.json` is a separate latest-projection view. These observer-local counts are not Ethereum population estimates. See [Network Analytics](docs/adr/network-analytics.md).
+
 Set `TORCHNODE_PORT` or `TORCHNODE_DB` to override the default port and database path.
 
 Node Inspect measures discovery, P2P TCP, RLPx Auth, devp2p Hello, ETH Status,

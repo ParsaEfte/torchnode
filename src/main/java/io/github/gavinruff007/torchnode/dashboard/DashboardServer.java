@@ -79,6 +79,7 @@ public class DashboardServer {
         Path root = Files.createTempDirectory("torchnode-webapp-");
         copyView(root, "dashboard.jsp");
         copyView(root, "inspection.jsp");
+        copyView(root, "analytics.jsp");
         return root;
     }
 
