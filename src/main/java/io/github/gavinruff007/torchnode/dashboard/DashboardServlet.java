@@ -74,6 +74,10 @@ public class DashboardServlet extends HttpServlet {
             showAnalytics(request,response);
             return;
         }
+        if ("/reports".equals(request.getServletPath()) || "/reports/network".equals(request.getServletPath())) {
+            showAnalytics(request,response);
+            return;
+        }
         if ("/analytics/snapshot.json".equals(request.getServletPath())) {
             try {
                 synchronized(scannerService) {
@@ -97,6 +101,10 @@ public class DashboardServlet extends HttpServlet {
         }
         if ("/inspection/changes".equals(request.getServletPath())) {
             changeHistory(request, response);
+            return;
+        }
+        if ("/inspection/evidence".equals(request.getServletPath())) {
+            observationHistory(request, response);
             return;
         }
         if (!"/".equals(request.getServletPath())) {
@@ -174,9 +182,13 @@ public class DashboardServlet extends HttpServlet {
     private void showAnalytics(HttpServletRequest request,HttpServletResponse response)
             throws ServletException,IOException {
         try {
+            String mode=request.getParameter("mode");
+            if(mode!=null && !"all".equals(mode))throw new IllegalArgumentException("Invalid mode");
+            if("all".equals(mode) && (request.getParameter("start")!=null || request.getParameter("end")!=null))
+                throw new IllegalArgumentException("All available mode cannot have bounds");
             Instant end=request.getParameter("end")==null?Instant.now():Instant.parse(request.getParameter("end"));
             Instant start=request.getParameter("start")==null?end.minus(1,ChronoUnit.DAYS):Instant.parse(request.getParameter("start"));
-            var scope="all".equals(request.getParameter("mode"))?NetworkAnalytics.Scope.allAvailable():
+            var scope="all".equals(mode)?NetworkAnalytics.Scope.allAvailable():
                     new NetworkAnalytics.Scope(start,end);
             synchronized(scannerService) {
                 var report=new NetworkAnalytics(databasePath).measure(scope);
@@ -185,11 +197,15 @@ public class DashboardServlet extends HttpServlet {
                     objectMapper.writeValue(response.getWriter(),report);
                 } else {
                     request.setAttribute("analytics",report);
-                    request.setAttribute("analyticsSnapshot",new NetworkAnalytics(databasePath).snapshot());
-                    request.getRequestDispatcher("/WEB-INF/views/analytics.jsp").forward(request,response);
+                    if (request.getServletPath().startsWith("/reports"))
+                        request.getRequestDispatcher("/WEB-INF/views/report.jsp").forward(request,response);
+                    else {
+                        request.setAttribute("analyticsSnapshot",new NetworkAnalytics(databasePath).snapshot());
+                        request.getRequestDispatcher("/WEB-INF/views/analytics.jsp").forward(request,response);
+                    }
                 }
             }
-        } catch(IllegalArgumentException e) {
+        } catch(IllegalArgumentException | java.time.DateTimeException e) {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST,"Invalid analytics window (maximum 31 days)");
         } catch(SQLException e) {
             if(e.getMessage()!=null && (e.getMessage().contains("evidence-row safety limit") ||
@@ -291,6 +307,37 @@ public class DashboardServlet extends HttpServlet {
             response.setContentType("application/json;charset=UTF-8");
             objectMapper.writeValue(response.getWriter(),changes);
         }catch(Exception e){throw new IOException("Unable to load change history",e);}
+    }
+
+    private void observationHistory(HttpServletRequest request,HttpServletResponse response) throws IOException {
+        String key=normalize(request.getParameter("key"));
+        String domain=normalize(request.getParameter("domain"));
+        if(key==null || !("discovery".equals(domain) || "enr".equals(domain) || "enrichment".equals(domain))) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST);return;
+        }
+        long before=0;
+        String enrichmentBefore=normalize(request.getParameter("before"));
+        try {
+            if(!"enrichment".equals(domain)) {
+                before=request.getParameter("before")==null?0:Long.parseLong(request.getParameter("before"));
+                if(before<0)throw new NumberFormatException();
+            } else if(enrichmentBefore!=null && !enrichmentBefore.matches("[0-9a-f]{64}"))
+                throw new NumberFormatException();
+        } catch(NumberFormatException e) {response.sendError(HttpServletResponse.SC_BAD_REQUEST);return;}
+        int limit=Math.min(50,positiveInt(request.getParameter("limit"),20));
+        synchronized(scannerService) {
+            try(var store=new SqliteNodeStore(databasePath)) {
+                var node=store.findByKey(key);
+                if(node.isEmpty()){response.sendError(HttpServletResponse.SC_NOT_FOUND);return;}
+                Object history=switch(domain) {
+                    case "discovery" -> store.discoveryHistory(node.get().identity(),limit,before);
+                    case "enr" -> store.enrHistory(node.get().identity(),limit,before);
+                    default -> store.enrichmentHistory(node.get().identity(),limit,enrichmentBefore);
+                };
+                response.setContentType("application/json;charset=UTF-8");
+                objectMapper.writeValue(response.getWriter(),history);
+            } catch(Exception e) {throw new IOException("Unable to load observation history",e);}
+        }
     }
 
     private void exportCsv(HttpServletResponse response) throws IOException {

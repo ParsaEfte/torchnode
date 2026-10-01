@@ -80,6 +80,7 @@ public class DashboardServer {
         copyView(root, "dashboard.jsp");
         copyView(root, "inspection.jsp");
         copyView(root, "analytics.jsp");
+        copyView(root, "report.jsp");
         return root;
     }
 

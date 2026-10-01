@@ -11,7 +11,7 @@ body{background:#080b12;color:#eef3fb;font:14px/1.5 system-ui,sans-serif;margin:
 a{color:#42d9d0}h1{font-size:32px}p,small{color:#aeb9c9}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
 article{background:#111722;border:1px solid #263044;border-radius:12px;padding:18px}h2{font-size:17px;margin:0 0 10px}table{width:100%;border-collapse:collapse}
 td{padding:5px 0;border-top:1px solid #263044;overflow-wrap:anywhere}td:last-child{text-align:right;font-variant-numeric:tabular-nums}code{color:#42d9d0}
-</style></head><body><main class="shell"><a href="/">← Dashboard</a><h1>Network Analytics</h1>
+</style></head><body><main class="shell"><a href="/">← Dashboard</a> · <a href="/reports/network">Printable report</a><h1>Network Analytics</h1>
 <p><%=h(report.populationWarning())%></p><p>Scope: <%=h(report.scope().mode())%>. Measurement window (UTC, start inclusive; end exclusive): <code><%=h(report.scope().startInclusive())%></code> → <code><%=h(report.scope().endExclusive())%></code></p>
 <p><a href="/analytics?mode=all">All available compatible evidence</a>. Every scope has a 250,000 timestamp-eligible evidence-row safety limit; a scope beyond it returns an explicit error. Narrow the window to measure a larger retained database.</p>
 <p>Separate latest projection snapshot: <%=snapshot.distinctProjectionIdentities()%> identities across <%=snapshot.latestProjectionRows()%> rows. This is current latest evidence, not the historical window below.</p>

@@ -43,28 +43,30 @@
         @media(max-width:1050px){.summary{grid-template-columns:repeat(3,minmax(0,1fr))}#identity,#stack,#network-verification,#diagnostics{grid-template-columns:repeat(2,minmax(0,1fr))}}
         @media(max-width:760px){.shell{width:calc(100% - 24px);padding-top:22px}.grid{grid-template-columns:1fr}.wide{grid-column:auto}.top{flex-direction:column}.row{grid-template-columns:105px minmax(0,1fr)}.row .copy{grid-column:2}.diagnostic{grid-template-columns:1fr auto}.diagnostic .reason{grid-column:1/-1}}
         @media(max-width:520px){.summary{grid-template-columns:repeat(2,minmax(0,1fr))}.rows,#identity,#stack,#network-verification,#diagnostics{grid-template-columns:1fr}.row.long{grid-column:auto}.p2p-pipeline{flex-direction:column;align-items:stretch}.p2p-step:not(:last-child):after{content:'↓';margin-left:auto}}
+        .evidence-nav{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 18px}.evidence-nav a{color:var(--cyan);padding:6px 9px;border:1px solid var(--line);border-radius:6px;text-decoration:none}.history-note{color:var(--muted);font-size:12px}.history-list{display:grid;gap:9px}.history-list details{min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px;background:#0d131e}.history-list summary{cursor:pointer;overflow-wrap:anywhere}.history-list .rows{margin-top:10px}.history-list time{font-family:ui-monospace,monospace;font-size:12px}.history-list .occurrence{padding:6px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}.copy:hover,.back:hover,.evidence-nav a:hover{border-color:var(--cyan)}a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var(--amber);outline-offset:2px}#inspection-history,#change-history{display:grid;gap:9px}#inspection-history details,#change-history details{padding:10px;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere}@media(max-width:520px){.history-list .rows{grid-template-columns:1fr}}
     </style>
 </head>
 <body>
 <main class="shell">
     <div class="top">
-        <div><div class="eyebrow">Deep node inspection</div><h1><%= h(node.getIp()) %></h1><div id="connection" class="status checking"><span class="dot"></span>Inspecting from scanner…</div></div>
+        <div><div class="eyebrow">Observed identity · latest projection</div><h1><%= h(node.getIp()) %></h1><div id="connection" class="status checking"><span class="dot"></span>Inspecting from scanner…</div></div>
         <a class="back" href="/">← Observatory</a>
     </div>
+    <nav class="evidence-nav" aria-label="Evidence sections"><a href="#current-evidence">Current evidence</a><a href="#change-evidence">Derived changes</a><a href="#discovery-evidence">Discovery history</a><a href="#enr-evidence">ENR history</a><a href="#enrichment-evidence">Enrichment history</a><a href="#run-evidence">Inspection runs</a><a href="/reports/network">Network report</a></nav>
     <div id="warning" class="notice" hidden></div>
     <section class="summary">
-        <div class="metric"><div class="label">Last known node type</div><strong id="summary-type"><%= h(node.getNodeType()) %></strong></div>
-        <div class="metric"><div class="label">Detected client</div><strong id="summary-client"><%= h(node.getClientVersion()) %></strong></div>
+        <div class="metric"><div class="label">Latest projected node type</div><strong id="summary-type"><%= h(node.getNodeType()) %></strong></div>
+        <div class="metric"><div class="label">Latest client evidence</div><strong id="summary-client"><%= h(node.getClientVersion()) %></strong></div>
         <div class="metric"><div class="label">Ethereum network</div><strong id="summary-network" class="pending-value">Checking…</strong></div>
         <div class="metric"><div class="label">P2P TCP</div><strong id="summary-p2p" class="pending-value">Checking…</strong></div>
         <div class="metric"><div class="label">JSON-RPC</div><strong id="summary-rpc" class="pending-value">Checking…</strong></div>
         <div class="metric"><div class="label">Beacon API</div><strong id="summary-beacon" class="pending-value">Checking…</strong></div>
-        <div class="metric"><div class="label">Last seen</div><strong id="summary-seen">Unavailable</strong></div>
+        <div class="metric"><div class="label">Latest projected observation</div><strong id="summary-seen">Unavailable</strong></div>
         <div class="metric"><div class="label">Inspection</div><strong id="summary-inspected" class="pending-value">Starting…</strong></div>
     </section>
     <div class="badges"><span id="badge-discovery" class="badge confirmed">● Discovery</span><span id="badge-p2p" class="badge">● P2P TCP</span><span id="badge-rlpx" class="badge">● RLPx</span><span id="badge-eth" class="badge">● ETH protocol</span><span id="badge-rpc" class="badge">● RPC</span><span id="badge-beacon" class="badge">● Beacon</span></div>
 
-    <div class="grid">
+    <div id="current-evidence" class="grid">
         <section id="stack-card" class="card wide" hidden><h2>Ethereum Node Stack</h2><div id="stack" class="rows"></div></section>
         <section class="card wide"><h2>Node identity</h2><div id="identity" class="rows"></div></section>
         <section class="card"><h2>Client information</h2><div id="client" class="rows"><div class="muted">Waiting for client identification…</div></div></section>
@@ -74,9 +76,13 @@
         <section class="card wide"><h2>Network Verification</h2><div id="network-verification" class="rows"></div></section>
         <section class="card"><h2>JSON-RPC</h2><div id="rpc" class="rows"><div class="muted">Checking supported RPC endpoints…</div></div></section>
         <section class="card"><h2>Beacon API</h2><div id="beacon" class="rows"><div class="muted">Checking supported Beacon endpoints…</div></div></section>
-        <section class="card"><h2>Inspection timeline</h2><div id="timeline" class="timeline"></div></section>
-        <section class="card wide"><h2>Recent changes in observed evidence</h2><div id="change-history" class="rows" data-key="<%= h(node.getKey()) %>"></div><button id="changes-more" class="copy" type="button" hidden>Load more</button></section>
-        <section class="card wide"><h2>Previous inspections</h2><div id="inspection-history" class="rows" data-key="<%= h(node.getKey()) %>"></div><button id="history-more" class="copy" type="button" hidden>Load more</button></section>
+        <section class="card"><h2>Current inspection timeline</h2><div id="timeline" class="timeline"></div></section>
+        <section class="card wide"><h2>Recent historical evidence</h2><p class="history-note">Up to 20 occurrences per domain. Compatible repeated evidence is grouped by its latest clock in the loaded window; expand to see every occurrence. A first/last range does not imply continuous presence. Equal times do not establish cause or sequence. Untimed legacy runs appear after timed evidence.</p><div id="historical-timeline" class="timeline" aria-live="polite"></div></section>
+        <section id="change-evidence" class="card wide"><h2>Derived changes in observed evidence</h2><p class="history-note">These comparisons describe differences between source observations. Their clocks do not identify the physical instant a peer changed.</p><div id="change-history" class="rows" data-key="<%= h(node.getKey()) %>"></div><button id="changes-more" class="copy" type="button" hidden>Load more</button></section>
+        <section id="discovery-evidence" class="card wide"><h2>Discovery observation history</h2><p class="history-note">Repeated compatible receipts are grouped within each 20-occurrence page. Expand a group to inspect every receipt. First and last clocks do not imply continuous presence.</p><div id="discovery-history" class="history-list" data-key="<%= h(node.getKey()) %>"></div><button id="discovery-more" class="copy" type="button" hidden>Load more observations</button></section>
+        <section id="enr-evidence" class="card wide"><h2>ENR observation history</h2><p class="history-note">Invalid and identity-mismatched records remain diagnostic evidence; only usable records count as trusted ENR evidence.</p><div id="enr-history" class="history-list" data-key="<%= h(node.getKey()) %>"></div><button id="enr-more" class="copy" type="button" hidden>Load more ENR observations</button></section>
+        <section id="enrichment-evidence" class="card wide"><h2>Historical address enrichment</h2><p class="history-note">Lookup results belong to an address and dataset at lookup time. A different dataset result is not node movement; ASN organization is not hosting proof.</p><div id="enrichment-history" class="history-list" data-key="<%= h(node.getKey()) %>"></div><button id="enrichment-more" class="copy" type="button" hidden>Load more lookup contexts</button></section>
+        <section id="run-evidence" class="card wide"><h2>Inspection runs</h2><p class="history-note">Each run is an occurrence, even when another run shares its stored evidence payload. RPC and Beacon are independent of P2P stages.</p><div id="inspection-history" class="rows" data-key="<%= h(node.getKey()) %>"></div><button id="history-more" class="copy" type="button" hidden>Load more runs</button></section>
         <section class="card wide"><h2>Connectivity & diagnostics</h2><div id="p2p-pipeline" class="p2p-pipeline"></div><div id="diagnostics"></div></section>
     </div>
 </main>
@@ -260,7 +266,8 @@ function render(data) {
     row(identity, 'ENR', enr ? enr.text : null, enr ? 'ENR' : null, true, true);
     row(identity, 'enode URL', node.enode, node.enode ? 'Derived' : null, true, true); row(identity, 'IP address', node.ip, 'Discovery', true);
     row(identity, 'Discovery UDP', node.discoveryEndpoint, 'Discovery', true);
-    row(identity, 'P2P TCP', node.p2pEndpoint, 'Discovery', true);
+    row(identity, 'P2P TCP endpoint claim', typeof node.p2pEndpoint === 'string' && node.p2pEndpoint.endsWith(':0')
+        ? 'No P2P TCP port claimed' : node.p2pEndpoint, 'Discovery', true);
     row(identity, 'Confirmed JSON-RPC', node.rpcEndpoint, data.rpc ? 'RPC' : null, true);
     row(identity, 'Confirmed Beacon API', node.beaconEndpoint, data.beacon ? 'Beacon' : null, true);
     row(identity, 'TCP port', node.tcpPort, 'Discovery'); row(identity, 'UDP port', node.udpPort, 'Discovery');
@@ -342,12 +349,12 @@ function render(data) {
     const rpc = el('rpc'); rpc.replaceChildren();
     if (data.rpc) { row(rpc, 'Status', 'Reachable', 'RPC'); row(rpc, 'Confirmed endpoint', data.rpc.endpoint, 'RPC', true); row(rpc, 'Response time', available(data.rpc.responseMs) ? data.rpc.responseMs + ' ms' : null, 'RPC'); row(rpc, 'Chain ID', data.rpc.chainId, 'RPC'); row(rpc, 'Network ID', data.rpc.networkId, 'RPC'); row(rpc, 'Latest block', data.rpc.blockNumber, 'RPC'); row(rpc, 'Peer count', data.rpc.peerCount, 'RPC'); row(rpc, 'Syncing', yesNo(data.rpc.syncing), 'RPC'); Object.entries(data.rpc.methodStatus || {}).forEach(([name,state]) => row(rpc, name, state, 'RPC')); }
     else if (rpcCheck.state === 'CHECKING') skeleton(rpc, 4);
-    else { row(rpc, 'Status', 'Not detected (' + rpcCheck.state.replace('_',' ') + ')', 'RPC'); if ((data.rpcProbeEndpoints || []).length) row(rpc, 'Candidate endpoints probed', data.rpcProbeEndpoints.join(', '), 'Scanner'); if (rpcCheck.reason) row(rpc, 'Reason', rpcCheck.reason, null); }
+    else { row(rpc, 'Candidate probe outcome', rpcCheck.state.replace('_',' '), 'RPC'); if ((data.rpcProbeEndpoints || []).length) row(rpc, 'Candidate endpoints probed', data.rpcProbeEndpoints.join(', '), 'Scanner'); if (rpcCheck.reason) row(rpc, 'Reason', rpcCheck.reason, null); }
 
     const beacon = el('beacon'); beacon.replaceChildren();
     if (data.beacon) { row(beacon, 'Status', 'Reachable', 'Beacon'); row(beacon, 'Confirmed endpoint', node.beaconEndpoint, 'Beacon', true); row(beacon, 'Response time', available(data.beacon.responseMs) ? data.beacon.responseMs + ' ms' : null, 'Beacon'); row(beacon, 'Client', data.beacon.version, 'Beacon'); row(beacon, 'Head slot', data.beacon.headSlot, 'Beacon'); row(beacon, 'Sync distance', data.beacon.syncDistance, 'Beacon'); row(beacon, 'Syncing', yesNo(data.beacon.syncing), 'Beacon'); row(beacon, 'Optimistic', yesNo(data.beacon.optimistic), 'Beacon'); row(beacon, 'Execution offline', yesNo(data.beacon.executionOffline), 'Beacon'); row(beacon, 'Genesis time', data.beacon.genesisTime, 'Beacon'); row(beacon, 'Genesis validators root', data.beacon.genesisValidatorsRoot, 'Beacon', true, true); }
     else if (beaconCheck.state === 'CHECKING') skeleton(beacon, 4);
-    else { row(beacon, 'Status', 'Not detected (' + beaconCheck.state.replace('_',' ') + ')', 'Beacon'); if ((data.beaconProbeEndpoints || []).length) row(beacon, 'Candidate endpoints probed', data.beaconProbeEndpoints.join(', '), 'Scanner'); if (beaconCheck.reason) row(beacon, 'Reason', beaconCheck.reason, null); }
+    else { row(beacon, 'Candidate probe outcome', beaconCheck.state.replace('_',' '), 'Beacon'); if ((data.beaconProbeEndpoints || []).length) row(beacon, 'Candidate endpoints probed', data.beaconProbeEndpoints.join(', '), 'Scanner'); if (beaconCheck.reason) row(beacon, 'Reason', beaconCheck.reason, null); }
 
     const diagnostics = el('diagnostics'); diagnostics.replaceChildren();
     const pipeline = el('p2p-pipeline'); pipeline.replaceChildren();
@@ -362,10 +369,70 @@ function render(data) {
 }
 
 async function poll() {
-    try { const response = await fetch('/inspection/status?id=' + encodeURIComponent(inspectionId), {cache:'no-store'}); if (response.status === 404) { location.replace('/'); return; } if (!response.ok) throw new Error('Inspection status unavailable'); const data = await response.json(); render(data); if(data.complete && !historyLoadedAfterComplete){historyLoadedAfterComplete=true;historyCursor=null;changeCursor=null;loadHistory();loadChanges();} setTimeout(poll, data.complete ? 5000 : 750); }
+    try { const response = await fetch('/inspection/status?id=' + encodeURIComponent(inspectionId), {cache:'no-store'}); if (response.status === 404) { historyAlive = false; ['historical-timeline','discovery-history','enr-history','enrichment-history','inspection-history','change-history'].forEach(id => el(id).replaceChildren()); location.replace('/'); return; } if (!response.ok) throw new Error('Inspection status unavailable'); const data = await response.json(); render(data); if(data.complete && !historyLoadedAfterComplete){historyLoadedAfterComplete=true;historyCursor=null;changeCursor=null;loadHistory();loadChanges();} setTimeout(poll, data.complete ? 5000 : 750); }
     catch (error) { el('warning').hidden = false; el('warning').textContent = error.message; setTimeout(poll, 2000); }
 }
-let historyCursor = null, historyLoading = false, historyLoadedAfterComplete = false;
+let historyCursor = null, historyLoading = false, historyLoadedAfterComplete = false, historyAlive = true;
+const timelinePages = {discovery: [], enr: [], enrichment: [], runs: [], changes: []};
+function renderHistoricalTimeline() {
+    const container = el('historical-timeline'); container.replaceChildren();
+    const events = [
+        ...timelinePages.discovery.map(item => ({stamp: item.observation.observedAt,
+            label: 'Discovery observation · ' + item.observation.source, anchor: '#discovery-evidence',
+            group: 'discovery:' + discoveryKey(item)})),
+        ...timelinePages.enr.map(item => ({stamp: item.evidence.observedAt,
+            label: (item.evidence.structurallyValid && item.evidence.signature === 'VALID' &&
+                item.evidence.identityComparison === 'MATCH' ? 'Trusted ENR' : 'Diagnostic ENR') + ' observation', anchor: '#enr-evidence',
+            group: 'enr:' + JSON.stringify([item.evidence.provenance,item.evidence.outcome,
+                item.evidence.detail,item.evidence.signature,item.evidence.identityComparison,
+                item.evidence.record,item.evidence.rawRlpHex])})),
+        ...timelinePages.enrichment.map(item => ({stamp: item.lookedUpAt,
+            label: 'Address enrichment lookup · ' + item.address, anchor: '#enrichment-evidence',
+            group: 'enrichment:' + JSON.stringify([item.address,item.datasetKey,item.evidence])})),
+        ...timelinePages.runs.map(item => ({stamp: item.startedAt,
+            label: 'Inspection run · ' + item.discoverySource, anchor: '#run-evidence', group: 'run:' + item.id})),
+        ...timelinePages.changes.map(item => ({stamp: item.currentObservedAt,
+            label: 'Derived change · ' + item.changeType.replaceAll('_', ' '), anchor: '#change-evidence', group: 'change:' + item.id}))
+    ];
+    events.sort((a, b) => {
+        if (!a.stamp) return b.stamp ? 1 : 0;
+        if (!b.stamp) return -1;
+        const clock = value => value.replace(/(\.\d+)?Z$/, (_, fraction) =>
+            '.' + (fraction ? fraction.slice(1) : '').padEnd(9, '0').slice(0, 9) + 'Z');
+        return clock(b.stamp).localeCompare(clock(a.stamp));
+    });
+    if (!events.length) { evidenceRow(container, 'History', 'No historical evidence in the loaded pages'); return; }
+    const groups = new Map();
+    events.forEach(event => {
+        if (!groups.has(event.group)) groups.set(event.group, []);
+        groups.get(event.group).push(event);
+    });
+    groups.forEach(occurrences => {
+        const event = occurrences[0];
+        const item = document.createElement('div'); item.className = 'event';
+        if (occurrences.length === 1) {
+            const stamp = document.createElement('time'); stamp.textContent = event.stamp || 'Chronology unavailable';
+            if (event.stamp) stamp.dateTime = event.stamp;
+            const link = document.createElement('a'); link.href = event.anchor; link.textContent = event.label;
+            item.append(stamp, link);
+        } else {
+            const detail = document.createElement('details'), summary = document.createElement('summary');
+            summary.textContent = event.label + ' · observed ' + occurrences.length + ' times between ' +
+                (occurrences[occurrences.length - 1].stamp || 'unknown time') + ' and ' + event.stamp +
+                ' in loaded pages';
+            detail.append(summary);
+            occurrences.forEach(occurrence => {
+                const line = document.createElement('div'); line.className = 'occurrence';
+                const stamp = document.createElement('time'); stamp.textContent = occurrence.stamp || 'Chronology unavailable';
+                if (occurrence.stamp) stamp.dateTime = occurrence.stamp;
+                const link = document.createElement('a'); link.href = occurrence.anchor; link.textContent = ' View source evidence';
+                line.append(stamp, link); detail.append(line);
+            });
+            item.append(detail);
+        }
+        container.append(item);
+    });
+}
 async function loadHistory() {
     if (historyLoading) return;
     historyLoading = true;
@@ -375,7 +442,9 @@ async function loadHistory() {
         const response = await fetch(url, {cache:'no-store'});
         if (!response.ok) throw new Error('History unavailable');
         const entries = await response.json();
+        if (!historyAlive) return;
         if (!historyCursor) container.replaceChildren();
+        if (!historyCursor) { timelinePages.runs = entries; renderHistoricalTimeline(); }
         entries.forEach(entry => {
             const detail = document.createElement('details'), summary = document.createElement('summary');
             const stages = (entry.evidence.diagnostics || []).filter(d => ['P2P TCP','RLPx Auth','RLPx Hello','ETH Status','JSON-RPC','Beacon API'].includes(d.name));
@@ -407,7 +476,9 @@ async function loadChanges() {
         const response = await fetch(url, {cache:'no-store'});
         if (!response.ok) throw new Error('Change history unavailable');
         const entries = await response.json();
+        if (!historyAlive) return;
         if (!changeCursor) container.replaceChildren();
+        if (!changeCursor) { timelinePages.changes = entries; renderHistoricalTimeline(); }
         entries.forEach(entry => {
             const detail = document.createElement('details'), summary = document.createElement('summary');
             const first = entry.previousObservationId == null;
@@ -427,6 +498,111 @@ async function loadChanges() {
     finally { changesLoading = false; }
 }
 el('changes-more').onclick = loadChanges;
+const observationState = {discovery: {cursor: 0, loading: false}, enr: {cursor: 0, loading: false},
+    enrichment: {cursor: null, loading: false}};
+function evidenceRow(container, label, value) {
+    const line = document.createElement('div'); line.className = 'occurrence';
+    const strong = document.createElement('strong'); strong.textContent = label + ': ';
+    const span = document.createElement('span'); span.textContent = show(value);
+    line.append(strong, span); container.append(line);
+}
+function endpointDescription(endpoint) {
+    return [endpoint.addressFamily, endpoint.transport, endpoint.purpose,
+        endpoint.address + ':' + endpoint.port].filter(available).join(' · ');
+}
+function discoveryKey(entry) {
+    const observation = entry.observation;
+    return JSON.stringify([observation.source, observation.provenance,
+        (observation.endpoints || []).map(endpoint => [endpoint.address, endpoint.addressFamily,
+            endpoint.transport, endpoint.purpose, endpoint.port])]);
+}
+function renderDiscoveryPage(container, entries) {
+    const groups = new Map();
+    for (const entry of entries) {
+        const key = discoveryKey(entry);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(entry);
+    }
+    groups.forEach(observations => {
+        const newest = observations[0].observation,
+            oldest = observations[observations.length - 1].observation;
+        const detail = document.createElement('details'), summary = document.createElement('summary');
+        summary.textContent = newest.source + ' · ' + observations.length + ' occurrence' +
+            (observations.length === 1 ? '' : 's') + ' on this page · observed ' +
+            oldest.observedAt + (observations.length > 1 ? ' to ' + newest.observedAt : '');
+        detail.append(summary);
+        evidenceRow(detail, 'Provenance', newest.provenance);
+        (newest.endpoints || []).forEach(endpoint => evidenceRow(detail, 'Endpoint evidence', endpointDescription(endpoint)));
+        observations.forEach(entry => evidenceRow(detail, 'Source observation #' + entry.id, entry.observation.observedAt));
+        container.append(detail);
+    });
+}
+function renderEnrPage(container, entries) {
+    entries.forEach(entry => {
+        const evidence = entry.evidence, detail = document.createElement('details'),
+            summary = document.createElement('summary');
+        const trusted = evidence.structurallyValid && evidence.signature === 'VALID' &&
+            evidence.identityComparison === 'MATCH';
+        summary.textContent = evidence.observedAt + ' · ' + (trusted ? 'Trusted ENR' : 'Diagnostic ENR') +
+            ' · ' + evidence.outcome + ' · sequence ' + (evidence.record?.sequence ?? 'unavailable');
+        detail.append(summary);
+        [['Source observation', entry.id], ['Provenance', evidence.provenance],
+            ['Received', evidence.received], ['Structurally valid', evidence.structurallyValid],
+            ['Signature', evidence.signature], ['Identity comparison', evidence.identityComparison],
+            ['Detail', evidence.detail]].forEach(([label, value]) => evidenceRow(detail, label, value));
+        (evidence.record?.endpoints || []).forEach(endpoint => evidenceRow(detail, 'Advertised endpoint', endpointDescription(endpoint)));
+        if (evidence.record) evidenceRow(detail, 'Record fields', JSON.stringify(evidence.record));
+        if (evidence.rawRlpHex) evidenceRow(detail, 'Raw RLP', evidence.rawRlpHex);
+        container.append(detail);
+    });
+}
+function renderEnrichmentPage(container, entries) {
+    entries.forEach(entry => {
+        const evidence = entry.evidence, detail = document.createElement('details'),
+            summary = document.createElement('summary');
+        summary.textContent = entry.lookedUpAt + ' · ' + entry.address + ' · ' + entry.datasetKey;
+        detail.append(summary);
+        [['Address family', evidence.addressFamily], ['Country lookup', evidence.country?.status],
+            ['Country', evidence.country?.countryName], ['Country dataset', evidence.country?.dataSourceVersion],
+            ['ASN lookup', evidence.asn?.status], ['ASN', evidence.asn?.asn],
+            ['ASN organization (registration context)', evidence.asn?.organization],
+            ['ASN dataset', evidence.asn?.dataSourceVersion],
+            ['Hosting', evidence.hostingClassification], ['Lookup occurrence', entry.lookupId]]
+            .forEach(([label, value]) => evidenceRow(detail, label, value));
+        container.append(detail);
+    });
+}
+async function loadObservations(domain) {
+    const state = observationState[domain];
+    if (state.loading) return;
+    state.loading = true;
+    const container = el(domain + '-history');
+    try {
+        const url = '/inspection/evidence?domain=' + domain + '&key=' +
+            encodeURIComponent(container.dataset.key) + '&limit=20' +
+            (state.cursor ? '&before=' + state.cursor : '');
+        const response = await fetch(url, {cache: 'no-store'});
+        if (response.status === 404) { location.replace('/'); return; }
+        if (!response.ok) throw new Error('Observation history unavailable');
+        const entries = await response.json();
+        if (!historyAlive) return;
+        if (!state.cursor) container.replaceChildren();
+        if (!state.cursor) { timelinePages[domain] = entries; renderHistoricalTimeline(); }
+        if (domain === 'discovery') renderDiscoveryPage(container, entries);
+        else if (domain === 'enr') renderEnrPage(container, entries);
+        else renderEnrichmentPage(container, entries);
+        if (!entries.length && !state.cursor) evidenceRow(container, 'Historical evidence', 'No ' + domain + ' observations recorded');
+        if (entries.length) state.cursor = domain === 'enrichment' ? entries[entries.length - 1].lookupId : entries[entries.length - 1].id;
+        el(domain + '-more').hidden = entries.length < 20;
+    } catch (error) { evidenceRow(container, 'History error', error.message); }
+    finally { state.loading = false; }
+}
+el('discovery-more').onclick = () => loadObservations('discovery');
+el('enr-more').onclick = () => loadObservations('enr');
+el('enrichment-more').onclick = () => loadObservations('enrichment');
+loadObservations('discovery');
+loadObservations('enr');
+loadObservations('enrichment');
 loadHistory();
 loadChanges();
 poll();

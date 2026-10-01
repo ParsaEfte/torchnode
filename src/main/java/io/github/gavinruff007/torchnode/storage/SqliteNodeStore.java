@@ -227,16 +227,45 @@ public class SqliteNodeStore implements NodeStore {
                                   String transport,String purpose,int port,String observedAt,String source,String provenance) {}
     public record DiscoveryHistory(long id,DiscoveryObservation observation) {}
     public record EnrHistory(long id,EnrEvidence evidence) {}
+    public record EnrichmentHistory(String lookupId,String address,String datasetKey,String lookedUpAt,
+                                    io.github.gavinruff007.torchnode.enrichment.NetworkEnrichment evidence) {}
+
+    /** Address/dataset lookup occurrences associated with any discovery endpoint for this identity. */
+    public List<EnrichmentHistory> enrichmentHistory(NodeIdentity identity,int limit,String beforeId) {
+        if(!identity.available() || limit<1 || limit>100)
+            throw new IllegalArgumentException("History limit must be 1..100 and identity available");
+        String at=sortableTime("l.looked_up_at");
+        String cursorAt="(SELECT "+sortableTime("looked_up_at")+" FROM network_enrichment_lookups WHERE lookup_id=?)";
+        String sql="SELECT l.* FROM network_enrichment_lookups l WHERE l.address IN "+
+                "(SELECT DISTINCT address FROM discovery_endpoint_index WHERE node_id=?) AND "+
+                "(? IS NULL OR "+at+"<"+cursorAt+" OR ("+at+"="+cursorAt+" AND l.lookup_id<?)) "+
+                "ORDER BY "+at+" DESC,l.lookup_id DESC LIMIT ?";
+        var result=new ArrayList<EnrichmentHistory>();
+        try(var query=connection.prepareStatement(sql)) {
+            query.setString(1,identity.nodeId());query.setString(2,beforeId);
+            query.setString(3,beforeId);query.setString(4,beforeId);query.setString(5,beforeId);
+            query.setInt(6,limit);
+            try(var rows=query.executeQuery()) {
+                while(rows.next())result.add(new EnrichmentHistory(
+                        rows.getString("lookup_id"),rows.getString("address"),rows.getString("dataset_key"),
+                        rows.getString("looked_up_at"),JSON.readValue(rows.getString("evidence_json"),
+                        io.github.gavinruff007.torchnode.enrichment.NetworkEnrichment.class)));
+            }
+        } catch(Exception e) {throw new IllegalStateException("Cannot load enrichment history",e);}
+        return List.copyOf(result);
+    }
 
     public List<DiscoveryHistory> discoveryHistory(NodeIdentity identity,int limit,long beforeId) {
         if(!identity.available() || limit<1 || limit>100)throw new IllegalArgumentException("History limit must be 1..100 and identity available");
         var result=new ArrayList<DiscoveryHistory>();
-        try(var query=connection.prepareStatement("""
+        String at=sortableTime("d.observed_at"),cursorAt="(SELECT "+sortableTime("observed_at")+
+                " FROM discovery_observations WHERE id=?)";
+        String sql="""
                 SELECT d.* FROM discovery_observations d WHERE d.node_id=? AND
-                  (?=0 OR d.observed_at<(SELECT observed_at FROM discovery_observations WHERE id=?) OR
-                  (d.observed_at=(SELECT observed_at FROM discovery_observations WHERE id=?) AND d.id<?))
-                ORDER BY d.observed_at DESC,d.id DESC LIMIT ?
-                """)){
+                  (?=0 OR %s<%s OR (%s=%s AND d.id<?))
+                ORDER BY %s DESC,d.id DESC LIMIT ?
+                """.formatted(at,cursorAt,at,cursorAt,at);
+        try(var query=connection.prepareStatement(sql)){
             query.setString(1,identity.nodeId());query.setLong(2,beforeId);query.setLong(3,beforeId);
             query.setLong(4,beforeId);query.setLong(5,beforeId);query.setInt(6,limit);
             try(var rows=query.executeQuery()){while(rows.next())result.add(new DiscoveryHistory(rows.getLong("id"),
@@ -250,12 +279,14 @@ public class SqliteNodeStore implements NodeStore {
     public List<EnrHistory> enrHistory(NodeIdentity identity,int limit,long beforeId) {
         if(!identity.available() || limit<1 || limit>100)throw new IllegalArgumentException("History limit must be 1..100 and identity available");
         var result=new ArrayList<EnrHistory>();
-        try(var query=connection.prepareStatement("""
+        String at=sortableTime("e.observed_at"),cursorAt="(SELECT "+sortableTime("observed_at")+
+                " FROM enr_observations WHERE id=?)";
+        String sql="""
                 SELECT e.* FROM enr_observations e WHERE e.node_id=? AND
-                  (?=0 OR e.observed_at<(SELECT observed_at FROM enr_observations WHERE id=?) OR
-                  (e.observed_at=(SELECT observed_at FROM enr_observations WHERE id=?) AND e.id<?))
-                ORDER BY e.observed_at DESC,e.id DESC LIMIT ?
-                """)){
+                  (?=0 OR %s<%s OR (%s=%s AND e.id<?))
+                ORDER BY %s DESC,e.id DESC LIMIT ?
+                """.formatted(at,cursorAt,at,cursorAt,at);
+        try(var query=connection.prepareStatement(sql)){
             query.setString(1,identity.nodeId());query.setLong(2,beforeId);query.setLong(3,beforeId);
             query.setLong(4,beforeId);query.setLong(5,beforeId);query.setInt(6,limit);
             try(var rows=query.executeQuery()){while(rows.next())result.add(new EnrHistory(rows.getLong("id"),
@@ -560,13 +591,14 @@ public class SqliteNodeStore implements NodeStore {
     /** Cursor is the last returned run ID; ordering is timestamp then ID, with NULL last. */
     public List<InspectionHistory> inspectionHistory(NodeIdentity identity, int limit, String beforeId) {
         if (!identity.available() || limit < 1 || limit > 100) throw new IllegalArgumentException("History limit must be 1..100 and identity available");
+        String at="COALESCE("+sortableTime("r.started_at")+",'')";
+        String cursorAt="COALESCE((SELECT "+sortableTime("started_at")+" FROM inspection_runs WHERE id=?),'')";
         String sql = """
                 SELECT r.*, e.evidence_json FROM inspection_runs r JOIN inspection_evidence e ON e.hash=r.evidence_hash
                 WHERE r.node_id=? AND (? IS NULL OR
-                  (COALESCE(r.started_at,'') < COALESCE((SELECT started_at FROM inspection_runs WHERE id=?),'') OR
-                   (COALESCE(r.started_at,'') = COALESCE((SELECT started_at FROM inspection_runs WHERE id=?),'') AND r.id < ?)))
-                ORDER BY r.started_at DESC, r.id DESC LIMIT ?
-                """;
+                  (%s < %s OR (%s = %s AND r.id < ?)))
+                ORDER BY %s DESC, r.id DESC LIMIT ?
+                """.formatted(at,cursorAt,at,cursorAt,at);
         try (var query = connection.prepareStatement(sql)) {
             query.setString(1,identity.nodeId()); query.setString(2,beforeId); query.setString(3,beforeId);
             query.setString(4,beforeId); query.setString(5,beforeId); query.setInt(6,limit);
