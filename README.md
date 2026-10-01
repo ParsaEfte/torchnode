@@ -50,6 +50,8 @@ java -jar target/torchnode-1.0-SNAPSHOT-jar-with-dependencies.jar
 
 Open `http://localhost:8080`. Scanning, stopping, inspection, filtering, statistics, and CSV export are available in the dashboard.
 
+The main Dashboard v2 shows bounded observation coverage, a local country-level endpoint-context map, client evidence, discovery/address-family views, protocol attempts, independent RPC/Beacon probes, and derived changes. Its 24-hour, 7-day and 30-day historical windows are separate from the latest-projection node table. No peer addresses are sent to a map service. See [Dashboard v2](docs/adr/dashboard-v2.md).
+
 `/analytics` provides a bounded UTC measurement window over recorded observations, with explicit counting units, denominators, and unknown evidence. `/analytics.json` exposes the same internal report; `/analytics/snapshot.json` is a separate latest-projection view. These observer-local counts are not Ethereum population estimates. See [Network Analytics](docs/adr/network-analytics.md).
 
 Set `TORCHNODE_PORT` or `TORCHNODE_DB` to override the default port and database path.

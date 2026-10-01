@@ -18,6 +18,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
@@ -60,6 +61,11 @@ public class DashboardServlet extends HttpServlet {
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
         response.setHeader("Cache-Control", "no-store");
+        if ("/assets/dashboard-v2.js".equals(request.getServletPath()) ||
+                "/assets/world-countries.svg".equals(request.getServletPath())) {
+            serveDashboardAsset(request.getServletPath(), response);
+            return;
+        }
         if ("/export.csv".equals(request.getServletPath())) {
             exportCsv(response);
             return;
@@ -152,6 +158,16 @@ public class DashboardServlet extends HttpServlet {
             request.getRequestDispatcher("/WEB-INF/views/dashboard.jsp").forward(request, response);
         } catch (Exception e) {
             throw new ServletException("Unable to load dashboard data", e);
+        }
+    }
+
+    private void serveDashboardAsset(String path, HttpServletResponse response) throws IOException {
+        try (InputStream asset = getClass().getResourceAsStream("/webapp" + path)) {
+            if (asset == null) { response.sendError(HttpServletResponse.SC_NOT_FOUND); return; }
+            response.setContentType(path.endsWith(".svg") ? "image/svg+xml;charset=UTF-8" :
+                    "text/javascript;charset=UTF-8");
+            response.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'");
+            asset.transferTo(response.getOutputStream());
         }
     }
 

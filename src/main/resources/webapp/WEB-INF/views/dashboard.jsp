@@ -116,13 +116,37 @@
         body.pending .table-wrap table,body.pending .pagination,body.pending .empty { opacity:.14; }
         .table-skeleton { display:none; position:absolute; inset:50px 0 0; padding:12px 18px; background:#111722d9; pointer-events:none; }
         body.pending .table-skeleton { display:block; }
-        .skeleton-row { display:grid; grid-template-columns:1.3fr 1.1fr .6fr 1.4fr .8fr .5fr .8fr .9fr .6fr; gap:18px; align-items:center; height:51px; border-bottom:1px solid #20293a; }
+        .skeleton-row { display:grid; grid-template-columns:1.3fr 1.1fr .8fr .6fr 1.4fr .8fr .5fr .8fr .9fr .6fr; gap:18px; align-items:center; height:51px; border-bottom:1px solid #20293a; }
         .skeleton { height:12px; border-radius:5px; background:linear-gradient(90deg,#1d2837 20%,#2b3b4b 45%,#1d2837 70%); background-size:220% 100%; animation:shimmer 1.5s linear infinite; }
         .skeleton-row span:nth-child(3n) { width:65%; }
         @keyframes shimmer { to { background-position-x:-220%; } }
         @media (prefers-reduced-motion:reduce) { .skeleton { animation:none; } }
         @media (max-width:980px) { .stats { grid-template-columns:repeat(2,1fr); } .table-wrap { overflow-x:auto; } }
         @media (max-width:620px) { .shell { width:min(100% - 24px,1440px); padding-top:24px; } header { align-items:start; flex-direction:column; } .header-actions { flex-wrap:wrap; } .stats { grid-template-columns:1fr 1fr; } .filters { flex-wrap:wrap; } input { flex:1 1 100%; } select,.filters button { flex:1; } }
+        .scope-panel { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; padding:17px 20px; margin-bottom:18px; border:1px solid var(--line); border-radius:14px; background:var(--panel); }
+        .scope-panel h2 { margin:0 0 4px; font-size:18px; }.scope-panel p,.viz-note { margin:4px 0 0; color:#aeb9c9; font-size:12px; line-height:1.5; }
+        .scope-controls { display:flex; flex-wrap:wrap; align-items:center; gap:9px; }.scope-controls label { color:#c8d6e3; font-size:12px; }.scope-controls select { min-width:110px; }
+        #measurement-status { display:block; color:#aeb9c9; margin:0 0 18px; overflow-wrap:anywhere; }
+        .visual-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-bottom:22px; }
+        .visual-grid > .viz-note,.visual-grid > .viz-empty { grid-column:1/-1; }
+        .viz-panel { min-width:0; padding:18px; border:1px solid var(--line); border-radius:14px; background:var(--panel); }
+        .viz-panel:first-child,.viz-panel:nth-child(2),.viz-panel:nth-child(5) { grid-column:1/-1; }
+        .viz-panel h3 { margin:0; font-size:18px; }.viz-panel h4 { margin:16px 0 8px; font-size:13px; }
+        .overview-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:14px 0; }
+        .overview-card { display:flex; flex-direction:column; min-width:0; padding:14px; border:1px solid #2a3a4b; border-radius:10px; background:#0d131e; }
+        .overview-label { color:#b9c7d7; font-size:12px; }.overview-value { font-size:27px; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
+        .overview-card small { color:#aeb9c9; font-size:11px; }
+        .viz-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+        .bar-list { display:grid; gap:7px; margin-top:12px; }.bar-row { display:grid; grid-template-columns:minmax(85px,1.1fr) minmax(60px,2fr) auto; gap:10px; align-items:center; min-width:0; font-size:12px; }
+        .bar-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.bar-track { height:9px; border-radius:9px; background:#263345; overflow:hidden; }.bar-fill { display:block; height:100%; border-radius:9px; background:var(--cyan); }
+        .bar-count { min-width:35px; text-align:right; font-variant-numeric:tabular-nums; }.viz-empty { padding:14px; color:#aeb9c9; border:1px dashed #385066; border-radius:9px; }
+        .world-map { min-height:160px; margin:15px 0; border:1px solid #263044; border-radius:10px; background:#0b1522; overflow:hidden; }.world-map svg { width:100%; height:auto; display:block; }.world-map path.observed-country { stroke:#71b9ae; }.world-map path:hover { stroke:#eef3fb; stroke-width:1.5; }
+        .funnel-row { display:grid; grid-template-columns:minmax(90px,1fr) auto minmax(140px,1.5fr); gap:12px; align-items:center; padding:12px 0; border-top:1px solid var(--line); }.funnel-row:first-of-type { margin-top:12px; }.funnel-row small { color:#aeb9c9; text-align:right; }
+        .latest-caption { color:#aeb9c9; font-size:12px; margin:0 0 10px; }.table-wrap { overflow-x:auto; }
+        button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible { outline:2px solid #a6f6e9; outline-offset:2px; }
+        @media (max-width:980px) { .overview-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+        @media (max-width:720px) { .visual-grid,.viz-columns { grid-template-columns:1fr; }.viz-panel:first-child,.viz-panel:nth-child(2),.viz-panel:nth-child(5) { grid-column:auto; }.funnel-row { grid-template-columns:1fr auto; }.funnel-row small { grid-column:1/-1; text-align:left; }.bar-row { grid-template-columns:minmax(65px,1fr) minmax(40px,1fr) auto; } }
+        @media (max-width:430px) { .overview-grid { grid-template-columns:1fr; }.stats { grid-template-columns:1fr 1fr; }.scope-controls { width:100%; }.scope-controls select { flex:1; } }
     </style>
 </head>
 <body>
@@ -156,12 +180,25 @@
     <% if (message != null) { %><div class="notice"><%= h(message) %></div><% } %>
     <% if (error != null) { %><div class="notice error"><%= h(error) %></div><% } %>
 
-    <section class="stats">
-        <div class="card"><div class="label">Discovered</div><div class="value"><%= request.getAttribute("totalNodes") %></div></div>
-        <div class="card"><div class="label">Active 15m</div><div class="value"><%= request.getAttribute("activeNodes") %></div></div>
-        <div class="card"><div class="label">RPC online</div><div class="value"><%= request.getAttribute("rpcNodes") %></div></div>
-        <div class="card"><div class="label">Beacon API</div><div class="value"><%= request.getAttribute("beaconNodes") %></div></div>
-        <div class="card"><div class="label">Avg P2P TCP connect</div><div class="value"><%= request.getAttribute("averageLatency") == null ? "—" : String.format("%.0f", request.getAttribute("averageLatency")) %><span class="unit"><%= request.getAttribute("averageLatency") == null ? "" : " ms" %></span></div></div>
+    <section class="scope-panel" aria-labelledby="scope-title">
+        <div><h2 id="scope-title">Network measurements</h2><p>Historical observations from this scanner. Window charts are independent of the latest-state table and its filters.</p></div>
+        <div class="scope-controls"><label for="measurement-scope">Measurement window</label>
+            <select id="measurement-scope"><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select>
+            <button type="button" class="secondary" id="refresh-measurement">Refresh measurement</button>
+            <a class="button secondary" href="/analytics">Full methodology</a>
+        </div>
+    </section>
+    <p id="measurement-status" role="status" aria-live="polite">Loading bounded observations…</p>
+    <div id="visual-analytics" class="visual-grid" aria-label="Network observation visualizations"></div>
+
+    <h2>Latest endpoint projections</h2>
+    <p class="latest-caption">This snapshot may contain several endpoint rows per cryptographic identity. It is separate from the historical charts above.</p>
+    <section class="stats" aria-label="Latest projection summary">
+        <div class="card"><div class="label">Latest identities</div><div class="value"><%= request.getAttribute("totalNodes") %></div></div>
+        <div class="card"><div class="label">Seen in last 15m</div><div class="value"><%= request.getAttribute("activeNodes") %></div></div>
+        <div class="card"><div class="label">RPC response in projection</div><div class="value"><%= request.getAttribute("rpcNodes") %></div></div>
+        <div class="card"><div class="label">Beacon response in projection</div><div class="value"><%= request.getAttribute("beaconNodes") %></div></div>
+        <div class="card"><div class="label">Observed TCP connect</div><div class="value"><%= request.getAttribute("averageLatency") == null ? "—" : String.format("%.0f", request.getAttribute("averageLatency")) %><span class="unit"><%= request.getAttribute("averageLatency") == null ? "" : " ms avg" %></span></div></div>
     </section>
 
     <form class="filters" method="get" id="filters">
@@ -182,22 +219,23 @@
     </form>
 
     <section class="table-wrap">
-        <div class="table-head"><span><strong>Node inventory</strong> · <%= "seen_desc".equals(sort) ? "newest first" : "seen_asc".equals(sort) ? "oldest first" : "most detailed first" %> <span class="loading-hint" role="status">Refreshing results…</span></span><span><%= request.getAttribute("resultFrom") %>–<%= request.getAttribute("resultTo") %> of <%= totalResults %></span></div>
+        <div class="table-head"><span><strong>Latest identity inventory</strong> · <%= "seen_desc".equals(sort) ? "newest first" : "seen_asc".equals(sort) ? "oldest first" : "most detailed first" %> <span class="loading-hint" role="status">Refreshing results…</span></span><span><%= request.getAttribute("resultFrom") %>–<%= request.getAttribute("resultTo") %> of <%= totalResults %></span></div>
         <% if (nodes.isEmpty()) { %>
             <div class="empty"><%= Integer.valueOf(0).equals(request.getAttribute("totalNodes")) ? "No nodes discovered yet." : "No matching nodes yet." %> Use <strong>Start scan</strong> to begin discovery.</div>
         <% } else { %>
         <table>
-            <thead><tr><th>Discovery endpoint</th><th>Node ID</th><th>Type</th><th>Client</th><th>Services</th><th>Details</th><th>P2P TCP connect</th><th aria-sort="<%= "seen_desc".equals(sort) ? "descending" : "seen_asc".equals(sort) ? "ascending" : "none" %>"><a class="sort-link <%= sort.startsWith("seen_") ? "active" : "" %>" href="<%= pageUrl(query, selectedType, pageSize, 1, "seen_asc".equals(sort) ? "seen_desc" : "seen_asc") %>" aria-label="Sort by Last Seen, <%= "seen_asc".equals(sort) ? "newest first" : "oldest first" %>">Last seen <span class="sort-arrow" aria-hidden="true"><%= "seen_desc".equals(sort) ? "↓" : "seen_asc".equals(sort) ? "↑" : "↕" %></span></a></th><th></th></tr></thead>
+            <thead><tr><th>Selected latest endpoint</th><th>Node ID</th><th>Last source</th><th>Type</th><th>Client</th><th>Responses in projection</th><th>Details</th><th>P2P TCP connect</th><th aria-sort="<%= "seen_desc".equals(sort) ? "descending" : "seen_asc".equals(sort) ? "ascending" : "none" %>"><a class="sort-link <%= sort.startsWith("seen_") ? "active" : "" %>" href="<%= pageUrl(query, selectedType, pageSize, 1, "seen_asc".equals(sort) ? "seen_desc" : "seen_asc") %>" aria-label="Sort by Last Seen, <%= "seen_asc".equals(sort) ? "newest first" : "oldest first" %>">Last seen <span class="sort-arrow" aria-hidden="true"><%= "seen_desc".equals(sort) ? "↓" : "seen_asc".equals(sort) ? "↑" : "↕" %></span></a></th><th></th></tr></thead>
             <tbody>
             <% for (NodeRecord node : nodes) { %>
                 <tr>
                     <td class="mono endpoint"><%= h(io.github.gavinruff007.torchnode.model.EndpointAddress.hostPort(node.getIp(), node.getUdpPort())) %></td>
                     <td class="mono muted" title="<%= h(node.getNodeId()) %>"><%= shortId(node.getNodeId()) %></td>
+                    <td><%= h(node.getDiscoverySource()) %></td>
                     <td><span class="badge"><%= h(node.getNodeType()) %></span></td>
                     <td class="client-cell" title="<%= h(node.getClientVersion()) %>"><%= h(node.getClientVersion()) %></td>
                     <td>
-                        <span class="service <%= node.isRpcAvailable() ? "good" : "muted" %>"><span class="dot"></span>RPC</span>
-                        <span class="service <%= node.isBeaconAvailable() ? "good" : "muted" %>"><span class="dot"></span>Beacon</span>
+                        <span class="service <%= node.isRpcAvailable() ? "good" : "muted" %>" title="<%= node.isRpcAvailable() ? "Response recorded in projection" : "No response recorded in this projection; service absence is not established" %>"><span class="dot"></span>RPC</span>
+                        <span class="service <%= node.isBeaconAvailable() ? "good" : "muted" %>" title="<%= node.isBeaconAvailable() ? "Response recorded in projection" : "No response recorded in this projection; service absence is not established" %>"><span class="dot"></span>Beacon</span>
                     </td>
                     <td><span class="badge"><%= DashboardServlet.detailScore(node) %>/18</span></td>
                     <td class="<%= node.getP2pConnectMs() == null ? "muted" : "" %>"><%= node.getP2pConnectMs() == null ? "—" : node.getP2pConnectMs() + " ms" %></td>
@@ -209,7 +247,7 @@
             </tbody>
         </table>
         <% } %>
-        <div class="table-skeleton" aria-hidden="true"><% for (int i = 0; i < Math.min(pageSize, 10); i++) { %><div class="skeleton-row"><% for (int j = 0; j < 9; j++) { %><span class="skeleton"></span><% } %></div><% } %></div>
+        <div class="table-skeleton" aria-hidden="true"><% for (int i = 0; i < Math.min(pageSize, 10); i++) { %><div class="skeleton-row"><% for (int j = 0; j < 10; j++) { %><span class="skeleton"></span><% } %></div><% } %></div>
         <div class="pagination">
             <span>Page <%= currentPage %> of <%= totalPages %></span>
             <div class="page-links">
@@ -272,5 +310,6 @@ setInterval(() => {
     pending(); setTimeout(() => location.reload(), 80);
 }, 30000);
 </script>
+<script src="/assets/dashboard-v2.js" defer></script>
 </body>
 </html>
