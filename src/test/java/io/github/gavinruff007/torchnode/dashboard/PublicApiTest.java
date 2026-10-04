@@ -5,6 +5,7 @@ import io.github.gavinruff007.torchnode.enr.EnrEvidence;
 import io.github.gavinruff007.torchnode.model.DiscoveryObservation;
 import io.github.gavinruff007.torchnode.model.NodeEndpoint;
 import io.github.gavinruff007.torchnode.model.NodeIdentity;
+import io.github.gavinruff007.torchnode.model.NodeRecord;
 import io.github.gavinruff007.torchnode.storage.SqliteNodeStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,6 +18,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -46,10 +48,30 @@ class PublicApiTest {
             store.saveEnrEvidence(new EnrEvidence(new NodeIdentity(a),Instant.parse("2026-01-01T00:00:04Z"),
                     "fixture","IDENTITY_MISMATCH","fixture",true,true,true,
                     EnrEvidence.Signature.VALID,EnrEvidence.IdentityComparison.MISMATCH,null,null));
+            var node=new NodeRecord("192.0.2.8",30303,30303,a);
+            node.setLastSeen(null);
+            store.save(node);
+            var facts=Map.<String,Object>of(
+                    "diagnostics",List.of(Map.of("name","P2P TCP","state","FAILED"),
+                            Map.of("name","RLPx Auth","state","NOT_TESTED"),
+                            Map.of("name","RLPx Hello","state","NOT_TESTED"),
+                            Map.of("name","ETH Status","state","NOT_TESTED")),
+                    "rpc",Map.of("outcome","PASS","clientVersion","UNKNOWN_VERSION"),
+                    "beacon",Map.of("outcome","PASS"),
+                    "client",Map.of("status","CONFLICT"));
+            store.saveInspectionRun(node,"run-a","2026-01-01T00:00:05Z","2026-01-01T00:00:06Z",
+                    facts,null,null,null,List.of(),List.of());
+            store.saveInspectionRun(node,"run-b","2026-01-01T00:00:05Z","2026-01-01T00:00:06Z",
+                    facts,null,null,null,List.of(),List.of());
         }
         try(var readOnly=new SqliteNodeStore(db,true)) {
             assertThrows(RuntimeException.class,()->readOnly.saveObservation(new DiscoveryObservation(
                     new NodeIdentity(a),"discv4",List.of(endpoint),Instant.parse("2026-02-01T00:00:00Z"),"blocked write")));
+        }
+        try(var connection=java.sql.DriverManager.getConnection("jdbc:sqlite:"+db);
+            var query=connection.createStatement()) {
+            try(var rows=query.executeQuery("SELECT COUNT(*) FROM inspection_runs")) {assertTrue(rows.next());assertEquals(2,rows.getInt(1));}
+            try(var rows=query.executeQuery("SELECT COUNT(*) FROM inspection_evidence")) {assertTrue(rows.next());assertEquals(1,rows.getInt(1));}
         }
         int port;try(var socket=new ServerSocket(0)){port=socket.getLocalPort();}
         var server=new DashboardServer(port,db);server.start();
@@ -80,6 +102,19 @@ class PublicApiTest {
             assertEquals("MISMATCH",enr.get(0).path("identityComparison").asText());
             assertFalse(enr.get(1).path("usable").asBoolean());
             assertEquals("INVALID",enr.get(1).path("signature").asText());
+            var runs=JSON.readTree(get(client,base+"/identities/"+a+"/runs?limit=1").body());
+            assertEquals("run-b",runs.path("data").get(0).path("id").asText());
+            assertEquals("NOT_TESTED",runs.path("data").get(0).path("evidence").path("diagnostics").get(1).path("state").asText());
+            assertEquals("PASS",runs.path("data").get(0).path("evidence").path("rpc").path("outcome").asText());
+            assertEquals("PASS",runs.path("data").get(0).path("evidence").path("beacon").path("outcome").asText());
+            assertEquals("CONFLICT",runs.path("data").get(0).path("evidence").path("client").path("status").asText());
+            assertEquals("UNKNOWN_VERSION",runs.path("data").get(0).path("evidence").path("rpc").path("clientVersion").asText());
+            var olderRun=JSON.readTree(get(client,base+"/identities/"+a+"/runs?limit=1&cursor="+
+                    runs.path("pagination").path("nextCursor").asText()).body());
+            assertEquals("run-a",olderRun.path("data").get(0).path("id").asText());
+            assertTrue(olderRun.path("pagination").path("nextCursor").isNull());
+            String runsCsv=get(client,base+"/identities/"+a+"/exports/runs.csv").body();
+            assertTrue(runsCsv.contains("run-a"));assertTrue(runsCsv.contains("run-b"));
             var changes=JSON.readTree(get(client,base+"/identities/"+a+"/changes").body());
             assertFalse(changes.path("data").isEmpty());
             var change=changes.path("data").get(0);

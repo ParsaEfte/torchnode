@@ -19,3 +19,11 @@ src/test/java/io/github/gavinruff007/torchnode/dashboard/DashboardServletTest.ja
 src/test/java/io/github/gavinruff007/torchnode/dashboard/EnrDashboardTest.java
 src/test/java/io/github/gavinruff007/torchnode/dashboard/PublicApiTest.java
 ```
+
+Follow-up contract validation commit staged set (the initial milestone commit above already matched its 15-file set):
+
+```text
+docs/validation/public-api-exports-files.md
+docs/validation/public-api-exports.md
+src/test/java/io/github/gavinruff007/torchnode/dashboard/PublicApiTest.java
+```
