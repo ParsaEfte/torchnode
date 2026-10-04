@@ -2,6 +2,10 @@
 
 TorchNode discovers Ethereum nodes, inspects their public services, and stores the results in SQLite.
 
+The versioned, read-only [public API and bounded exports](docs/api.md) expose
+identity-scoped evidence and Network Analytics. The old network-wide `/export.csv`
+is retired. The server binds loopback; deployment remains operator controlled.
+
 Discovery uses a provider boundary with independent discv4 and discv5 providers.
 Cryptographic node identities are separate from endpoint observations, whose
 source, provenance and timestamps are retained in SQLite. See the

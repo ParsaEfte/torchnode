@@ -54,21 +54,16 @@ class EnrDashboardTest {
                 assertEquals("NAT_EVIDENCE_INSUFFICIENT",snapshot.at("/endpointAnalysis/natEvidence").asText());
                 assertTrue(snapshot.at("/endpointAnalysis/comparisons").isArray());
                 try(var store=new SqliteNodeStore(path)){assertEquals(1,store.findEnrEvidence(node.identity()).size());}
-                String csv=http.send(HttpRequest.newBuilder(URI.create(root+"/export.csv")).build(),HttpResponse.BodyHandlers.ofString()).body();
-                assertTrue(csv.contains("ENDPOINT_OBSERVATIONS_JSON,ENDPOINT_ANALYSIS,NAT_EVIDENCE"));assertTrue(csv.contains("NAT_EVIDENCE_INSUFFICIENT"));assertTrue(csv.contains("IPV6"));assertTrue(csv.contains("2001:db8:0:0:0:0:0:42"));
-                assertTrue(csv.contains("NETWORK_ENRICHMENT_JSON"));assertTrue(csv.contains("DATASET_UNAVAILABLE"));assertTrue(csv.contains("NOT_AVAILABLE"));
-                assertTrue(csv.contains("ENR_SEQUENCE"));assertTrue(csv.contains(snapshot.at("/enr/record/text").asText()));
-                assertEquals(22,parseCsvRow(csv.lines().findFirst().orElseThrow()).size());
+                assertEquals(410,http.send(HttpRequest.newBuilder(URI.create(root+"/export.csv")).build(),HttpResponse.BodyHandlers.ofString()).statusCode());
+                var export=http.send(HttpRequest.newBuilder(URI.create(root+"/api/v1/identities/"+node.getNodeId()+"/exports/enr.csv?limit=99")).build(),HttpResponse.BodyHandlers.ofString());
+                assertEquals(200,export.statusCode());
+                String csv=export.body();
+                assertTrue(csv.contains("evidence_type,occurrence_id,observed_at,source,payload_json"));
+                assertTrue(csv.contains("VALID"));assertTrue(csv.contains("MATCH"));
+                assertTrue(csv.contains(snapshot.at("/enr/record/text").asText()));
+                assertEquals(7,parseCsvRow(csv.lines().findFirst().orElseThrow()).size());
                 try(var store=new SqliteNodeStore(path)) {
                     var expected=json.readTree(json.writeValueAsString(io.github.gavinruff007.torchnode.analysis.EndpointAnalysis.fromStore(store,node.identity()).toMap()));
-                    boolean found=false;
-                    for(String line:csv.lines().skip(1).toList()) {
-                        var columns=parseCsvRow(line);assertEquals(22,columns.size());
-                        if(!node.getNodeId().equals(columns.get(3)))continue;
-                        assertEquals(json.readTree(json.writeValueAsString(store.networkEnrichmentView(node.identity()))),json.readTree(columns.get(21)));
-                        assertEquals(expected,json.readTree(columns.get(19)));assertEquals(expected.path("natEvidence").asText(),columns.get(20));found=true;
-                    }
-                    assertTrue(found);
                     assertEquals(expected.path("natEvidence"),snapshot.at("/endpointAnalysis/natEvidence"));
                 }
 

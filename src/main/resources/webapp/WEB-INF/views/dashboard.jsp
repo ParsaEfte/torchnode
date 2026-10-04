@@ -157,7 +157,7 @@
             <a class="button secondary" href="/analytics">Network Analytics</a>
             <a class="button secondary" href="/reports/network">Network Report</a>
             <div class="live <%= scannerRunning ? "good" : "muted" %>"><span class="pulse"></span><%= scannerRunning ? "Scanner running" : "Scanner stopped" %></div>
-            <a class="button secondary" href="/export.csv">Export CSV</a>
+            <a class="button secondary" href="/api/v1/help">API &amp; Exports</a>
             <form class="action-form" method="post" action="/scanner/<%= scannerRunning ? "stop" : "start" %>">
                 <input type="hidden" name="csrf" value="<%= h(csrfToken) %>">
                 <button class="<%= scannerRunning ? "danger" : "" %>" type="submit"><%= scannerRunning ? "Stop scan" : "Start scan" %></button>

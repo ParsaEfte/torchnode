@@ -28,8 +28,18 @@ public class SqliteNodeStore implements NodeStore {
     private boolean changeSchemaReady;
     
     public SqliteNodeStore(String dbPath) throws SQLException {
-        connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
-        try { try(var statement=connection.createStatement()){statement.execute("PRAGMA foreign_keys=ON");} initSchema(); }
+        this(dbPath, false);
+    }
+
+    /** Open an existing frozen schema without running migrations or allowing writes. */
+    public SqliteNodeStore(String dbPath, boolean readOnly) throws SQLException {
+        connection = DriverManager.getConnection(readOnly
+                ? "jdbc:sqlite:" + java.nio.file.Path.of(dbPath).toAbsolutePath().toUri() + "?mode=ro"
+                : "jdbc:sqlite:" + dbPath);
+        try { try(var statement=connection.createStatement()){statement.execute("PRAGMA foreign_keys=ON");}
+            if (!readOnly) initSchema();
+            else { historicalSchemaReady=true; changeSchemaReady=true; }
+        }
         catch (SQLException | RuntimeException e) {
             try { connection.close(); } catch (SQLException close) { e.addSuppressed(close); }
             throw e;

@@ -46,6 +46,8 @@ public class DashboardServer {
         context.addServletMappingDecoded("*.jsp", "jsp");
         Tomcat.addServlet(context, "dashboard",
                 new DashboardServlet(databasePath, scannerService, inspectionService));
+        Tomcat.addServlet(context, "public-api", new PublicApiServlet(databasePath, scannerService));
+        context.addServletMappingDecoded("/api/v1/*", "public-api");
         context.addServletMappingDecoded("/", "dashboard");
 
         tomcat.start();

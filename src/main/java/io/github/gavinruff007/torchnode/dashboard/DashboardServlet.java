@@ -67,7 +67,9 @@ public class DashboardServlet extends HttpServlet {
             return;
         }
         if ("/export.csv".equals(request.getServletPath())) {
-            exportCsv(response);
+            response.setStatus(HttpServletResponse.SC_GONE);
+            response.setContentType("text/plain;charset=UTF-8");
+            response.getWriter().write("Network-wide endpoint CSV retired. Use /api/v1/help for bounded identity exports.\n");
             return;
         }
         if ("/analytics".equals(request.getServletPath()) || "/analytics.json".equals(request.getServletPath())) {
@@ -338,40 +340,6 @@ public class DashboardServlet extends HttpServlet {
                 objectMapper.writeValue(response.getWriter(),history);
             } catch(Exception e) {throw new IOException("Unable to load observation history",e);}
         }
-    }
-
-    private void exportCsv(HttpServletResponse response) throws IOException {
-        response.setContentType("text/csv;charset=UTF-8");
-        response.setHeader("Content-Disposition", "attachment; filename=torchnode-nodes.csv");
-        try (NodeStore store = new SqliteNodeStore(databasePath)) {
-            var writer = response.getWriter();
-            writer.println("IP,UDP_PORT,TCP_PORT,NODE_ID,TYPE,RPC,BEACON,LATENCY,CLIENT,BLOCK,LAST_SEEN,ENR,ENR_SEQUENCE,ENR_SIGNATURE,ENR_IDENTITY_COMPARISON,DISCOVERY_SOURCE,DISCV5_PROVENANCE,ADDRESS_FAMILY,ENDPOINT_OBSERVATIONS_JSON,ENDPOINT_ANALYSIS,NAT_EVIDENCE,NETWORK_ENRICHMENT_JSON");
-            for (NodeRecord node : store.findAll()) {
-                EnrEvidence enr = store instanceof SqliteNodeStore sqlite
-                        ? EnrEvidence.latestValidated(sqlite.findEnrEvidence(node.identity())).orElse(null) : null;
-                var analysis = io.github.gavinruff007.torchnode.analysis.EndpointAnalysis.fromStore((SqliteNodeStore)store,node.identity());
-                writer.println(String.join(",",
-                        csv(node.getIp()), csv(node.getUdpPort()), csv(node.getTcpPort()),
-                        csv(node.getNodeId()), csv(node.getNodeType()), csv(node.isRpcAvailable()),
-                        csv(node.isBeaconAvailable()), csv(node.getLatency()), csv(node.getClientVersion()),
-                        csv(node.getBlockNumber()), csv(node.getLastSeen()),
-                        csv(enr == null ? null : enr.record().text()), csv(enr == null ? null : enr.record().sequence()),
-                        csv(enr == null ? null : enr.signature()), csv(enr == null ? null : enr.identityComparison()),
-                        csv(node.getDiscoverySource()), csv(store.findObservations(node.identity()).stream()
-                            .filter(o -> o.source().equals("discv5")).map(o -> o.observedAt() + " " + o.provenance()).collect(java.util.stream.Collectors.joining(" | "))),
-                        csv(io.github.gavinruff007.torchnode.model.EndpointAddress.family(node.getIp())),
-                        csv(objectMapper.writeValueAsString(store.findObservations(node.identity()).stream().map(io.github.gavinruff007.torchnode.model.DiscoveryObservation::toMap).toList())),
-                        csv(objectMapper.writeValueAsString(analysis.toMap())),csv(analysis.natEvidence()),
-                        csv(objectMapper.writeValueAsString(((SqliteNodeStore)store).networkEnrichmentView(node.identity())))));
-            }
-        } catch (Exception e) {
-            throw new IOException("Unable to export nodes", e);
-        }
-    }
-
-    private String csv(Object value) {
-        if (value == null) return "";
-        return "\"" + value.toString().replace("\"", "\"\"") + "\"";
     }
 
     private String csrfToken(HttpServletRequest request) {

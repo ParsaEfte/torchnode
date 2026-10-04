@@ -52,7 +52,7 @@
         <div><div class="eyebrow">Observed identity · latest projection</div><h1><%= h(node.getIp()) %></h1><div id="connection" class="status checking"><span class="dot"></span>Inspecting from scanner…</div></div>
         <a class="back" href="/">← Observatory</a>
     </div>
-    <nav class="evidence-nav" aria-label="Evidence sections"><a href="#current-evidence">Current evidence</a><a href="#change-evidence">Derived changes</a><a href="#discovery-evidence">Discovery history</a><a href="#enr-evidence">ENR history</a><a href="#enrichment-evidence">Enrichment history</a><a href="#run-evidence">Inspection runs</a><a href="/reports/network">Network report</a></nav>
+    <nav class="evidence-nav" aria-label="Evidence sections"><a href="#current-evidence">Current evidence</a><a href="#change-evidence">Derived changes</a><a href="#discovery-evidence">Discovery history</a><a href="#enr-evidence">ENR history</a><a href="#enrichment-evidence">Enrichment history</a><a href="#run-evidence">Inspection runs</a><a href="/reports/network">Network report</a><% if(node.identity().available()) { %><a href="/api/v1/identities/<%=h(node.identity().nodeId())%>/exports/discovery.csv">Discovery CSV</a><% } %></nav>
     <div id="warning" class="notice" hidden></div>
     <section class="summary">
         <div class="metric"><div class="label">Latest projected node type</div><strong id="summary-type"><%= h(node.getNodeType()) %></strong></div>
