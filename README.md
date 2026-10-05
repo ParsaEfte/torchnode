@@ -1,49 +1,72 @@
-# TorchNode Ethereum node crawler
+# TorchNode Observatory
 
-TorchNode discovers Ethereum nodes, inspects their public services, and stores the results in SQLite.
+**Ethereum network observability below the RPC layer.** TorchNode discovers
+cryptographic node identities, inspects public protocol and service endpoints,
+and stores timestamped evidence in a local SQLite database. Its Dashboard,
+History, Changes, Network Analytics, Reports, and read-only API show what this
+observer measured. They do not estimate the entire Ethereum network.
 
-## Docker quick start
+[![CI and Docker distribution](https://github.com/ParsaEfte/torchnode/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ParsaEfte/torchnode/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-From a source checkout with Docker Compose:
+## Quick Start: v0.0.1 Docker image
 
-```sh
-docker compose up -d
-docker compose ps
-```
-
-Open <http://127.0.0.1:8080/> for the Dashboard or
-<http://127.0.0.1:8080/api/v1> for API discovery. Compose builds the JAR and
-both Go helpers inside the image, and keeps SQLite in the `torchnode-data`
-volume. Stop with `docker compose down`; that retains the volume. No host
-Maven, Java, or Go installation is needed.
-
-The official pre-release image is `parsa202089/torchnode:edge` for
-`linux/amd64` (moving, validated main branch); `sha-<12-character-sha>` tags
-identify validated commits. `latest` will mean the latest stable release,
-and is not published from main. To run the prebuilt image:
+Docker Engine or Docker Desktop is required. The published image supports
+**linux/amd64**; Docker Desktop can run it through emulation on an arm64 host.
 
 ```sh
-docker pull --platform linux/amd64 parsa202089/torchnode:edge
+docker pull --platform linux/amd64 parsa202089/torchnode:0.0.1
 docker volume create torchnode-data
 docker run -d --name torchnode --platform linux/amd64 --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v torchnode-data:/data \
-  parsa202089/torchnode:edge
+  parsa202089/torchnode:0.0.1
 ```
 
-The prebuilt image currently supports `linux/amd64`. The explicit platform
-also permits Docker Desktop on an arm64 host to run it through emulation.
+Open the [Dashboard](http://127.0.0.1:8080/) or [API v1](http://127.0.0.1:8080/api/v1).
+Stop with `docker stop torchnode`; restart with `docker start torchnode`.
+The named volume retains `/data/torchnode.db` across container recreation.
+Use one TorchNode container per database volume.
 
 The UI and API have **no authentication or application rate limiter**. The
-commands expose only host loopback; Internet exposure needs external TLS,
-access control, and rate limiting. GeoLite2 Country/ASN datasets are optional
-read-only mounts; absent datasets remain `DATASET_UNAVAILABLE`. See the
-[deployment guide](docs/deployment.md) for mounts, backup/restore, logs,
-restart, shutdown, and image tags. Use SQLite's backup API or `sqlite3 .backup`
-for a live database; do not raw-copy it while TorchNode is writing.
+command publishes port 8080 on host loopback only. Public Internet exposure
+requires external TLS, authentication, access control, and rate limiting.
+No inbound Ethereum port is published.
 
-The versioned, read-only [public API and bounded exports](docs/api.md) expose
-identity-scoped evidence and Network Analytics. The old network-wide `/export.csv`
-is retired. The server binds loopback; deployment remains operator controlled.
+From a source checkout, `docker compose up -d` builds the image without host
+Java, Maven, or Go; `docker compose down` retains its data volume. For Compose
+with the prebuilt release image, optional GeoLite2 mounts, logs, backups, and
+restore, see the [deployment guide](docs/deployment.md). Optional Country and
+ASN datasets are not bundled; without them, lookups report
+`DATASET_UNAVAILABLE`. `edge` remains a moving development tag; `latest`
+tracks the latest stable release. Prefer `0.0.1` for a repeatable deployment.
+
+## Evidence and architecture
+
+TorchNode treats IP addresses as endpoints, not identities. Each discovery,
+inspection, enrichment, and history record keeps its own source and time.
+Latest state is a projection; historical observations are durable evidence.
+Changes are derived comparisons between compatible observations. A failed
+P2P stage does not invalidate independent RPC or Beacon results.
+
+```text
+discv4 + discv5 discovery -> cryptographic node identity -> ENR / endpoints
+                                                        |
+                      +---------------------------------+-----------------+
+                      |                                 |                 |
+              TCP -> RLPx -> Hello -> ETH Status        RPC             Beacon
+                      +---------------------------------+-----------------+
+                                                        |
+                                   optional address-scoped GeoIP / ASN
+                                                        |
+                             historical observations -> changes / analytics
+                                                        |
+                                     Dashboard / Reports / Public API v1
+```
+
+The [public API guide](docs/api.md) covers bounded identity history and
+exports; `/api/v1` is the discovery route. The former network-wide
+`/export.csv` returns HTTP 410. See the [v0.0.1 release notes](docs/release-notes-v0.0.1.md),
+[changelog](CHANGELOG.md), and [MIT license](LICENSE).
 
 Discovery uses a provider boundary with independent discv4 and discv5 providers.
 Cryptographic node identities are separate from endpoint observations, whose

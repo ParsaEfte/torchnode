@@ -41,21 +41,22 @@ change the port inside the image, update its health check/publishing as well.
 ## Prebuilt image and tags
 
 The official Docker Hub repository is `parsa202089/torchnode` (the GitHub
-repository is `ParsaEfte/torchnode`). Before the formal v0.0.1 release,
-`edge` is the moving validated main-branch image and `sha-<12-character-sha>`
-identifies a validated development commit. `latest` is reserved for stable
-releases. Formal `vX.Y.Z` Git tags will publish `X.Y.Z`, `X.Y`, `X`, and
-`latest` after validation; released version tags are treated as immutable.
+repository is `ParsaEfte/torchnode`). The immutable v0.0.1 release image is
+`0.0.1`; `latest` tracks the latest stable release. `edge` is the moving
+validated main-branch image, while `sha-<12-character-sha>` identifies a
+validated development commit. Stable `vX.Y.Z` Git tags publish `X.Y.Z`,
+`X.Y`, `X`, and `latest` after validation; release-version tags are not
+overwritten.
 Only `linux/amd64` is published until `linux/arm64` receives independent
 runtime validation. The Maven JAR currently retains its internal
 `1.0-SNAPSHOT` version; image tags identify the distribution.
 
 ```sh
-docker pull --platform linux/amd64 parsa202089/torchnode:edge
+docker pull --platform linux/amd64 parsa202089/torchnode:0.0.1
 docker volume create torchnode-data
 docker run -d --name torchnode --platform linux/amd64 --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v torchnode-data:/data \
-  parsa202089/torchnode:edge
+  parsa202089/torchnode:0.0.1
 ```
 
 The explicit platform works on amd64 and permits Docker Desktop on an arm64
@@ -63,7 +64,7 @@ host to run this single-platform image through emulation. A plain `docker
 pull` on an arm64 host fails with `no matching manifest for linux/arm64/v8`.
 
 Compose also accepts the published image: set
-`TORCHNODE_IMAGE=parsa202089/torchnode:edge` and
+`TORCHNODE_IMAGE=parsa202089/torchnode:0.0.1` and
 `TORCHNODE_PULL_POLICY=always` for `docker compose up -d`; on arm64 also set
 `DOCKER_DEFAULT_PLATFORM=linux/amd64`. The default
 Compose path builds locally. Do not run the direct Docker and Compose
