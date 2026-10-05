@@ -51,16 +51,21 @@ runtime validation. The Maven JAR currently retains its internal
 `1.0-SNAPSHOT` version; image tags identify the distribution.
 
 ```sh
-docker pull parsa202089/torchnode:edge
+docker pull --platform linux/amd64 parsa202089/torchnode:edge
 docker volume create torchnode-data
-docker run -d --name torchnode --restart unless-stopped \
+docker run -d --name torchnode --platform linux/amd64 --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v torchnode-data:/data \
   parsa202089/torchnode:edge
 ```
 
+The explicit platform works on amd64 and permits Docker Desktop on an arm64
+host to run this single-platform image through emulation. A plain `docker
+pull` on an arm64 host fails with `no matching manifest for linux/arm64/v8`.
+
 Compose also accepts the published image: set
 `TORCHNODE_IMAGE=parsa202089/torchnode:edge` and
-`TORCHNODE_PULL_POLICY=always` for `docker compose up -d`. The default
+`TORCHNODE_PULL_POLICY=always` for `docker compose up -d`; on arm64 also set
+`DOCKER_DEFAULT_PLATFORM=linux/amd64`. The default
 Compose path builds locally. Do not run the direct Docker and Compose
 examples against the same data volume concurrently.
 

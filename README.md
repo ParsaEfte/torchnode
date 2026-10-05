@@ -23,12 +23,15 @@ identify validated commits. `latest` will mean the latest stable release,
 and is not published from main. To run the prebuilt image:
 
 ```sh
-docker pull parsa202089/torchnode:edge
+docker pull --platform linux/amd64 parsa202089/torchnode:edge
 docker volume create torchnode-data
-docker run -d --name torchnode --restart unless-stopped \
+docker run -d --name torchnode --platform linux/amd64 --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v torchnode-data:/data \
   parsa202089/torchnode:edge
 ```
+
+The prebuilt image currently supports `linux/amd64`. The explicit platform
+also permits Docker Desktop on an arm64 host to run it through emulation.
 
 The UI and API have **no authentication or application rate limiter**. The
 commands expose only host loopback; Internet exposure needs external TLS,

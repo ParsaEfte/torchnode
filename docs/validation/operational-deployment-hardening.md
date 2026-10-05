@@ -88,8 +88,53 @@ is not claimed as passed.
   initial browser state was visible, but navigation failed with
   `Computer Use server error -10005: cgWindowNotFound`; the in-app browser
   reported `Browser is not available: iab`. No visual observation is claimed.
-- Chrome was not yet retried against a pulled image because no image had been
-  published. No pulled-image browser result is claimed.
+- Chrome/Computer Use was retried against the independently pulled Docker Hub
+  image. The first attempt reported that the Chrome application state changed;
+  the isolated retry reported `Browser is not available: chrome`. Automated
+  browser validation was blocked by environment/tooling. The operator then
+  inspected the running pulled image at desktop (~1440px), laptop
+  (~1024–1280px), and mobile (~375–430px) widths, including the requested
+  pages and interactions, and reported `PASS — no blocking visual issues`.
+- Workflow run `37299049396` completed successfully: verify passed its Java,
+  Go, tag-policy, amd64 Docker build, and container smoke/persistence gates;
+  Docker Hub login and build/push passed. It published
+  `parsa202089/torchnode:edge` and `sha-9e46a74185fd`. The observed registry
+  index digest for `edge` was
+  `sha256:ce8be1db8fc722b996a0ffc1016d7cbe9744efff8b961fb9d5ea4230d0b9aec7`;
+  the linux/amd64 runtime manifest was
+  `sha256:66c1389987f3cbbad817528b603d8fbe3beb15cffe4f17885f6936d0bfbf4a1f`.
+  The index also contained an unknown/unknown attestation manifest.
+- A plain `docker pull parsa202089/torchnode:edge` on this arm64 host failed
+  with `no matching manifest for linux/arm64/v8`, exposing a quick-start
+  documentation error. `docker pull --platform linux/amd64
+  parsa202089/torchnode:edge` succeeded independently. Docker inspected the
+  pulled image as linux/amd64, 529,814,942 bytes unpacked, UID/GID 10001,
+  with the registry index digest above. The README and deployment guide now
+  specify the platform for the prebuilt-image path.
+- A fresh persistent named volume and the pulled image became healthy on
+  host loopback. Dashboard, API v1, analytics, reports, and help returned
+  HTTP 200; API discovery reported `apiVersion=v1`; legacy `/export.csv`
+  returned 410. The P2P helper exchanged its expected JSON protocol shape.
+  Java started the packaged discv5 helper during a scan and stopped it when
+  scanning stopped. The scan created 95 nodes.
+- `docker stop -t 30` exited in about 1.2 seconds, without SIGKILL. The
+  closed database copy before recreation had SHA-256
+  `2d590a5fbb36349deab522b88bcd1926e5833ac01e119db677036c1e96037123`,
+  schema v5, `integrity_check=ok`, zero foreign-key violations, 95 nodes,
+  190 discovery observations, and 16 inspection runs. Removing and recreating
+  the container with the same volume became healthy and preserved readable
+  identity data. Dashboard, analytics, reports, and API still returned 200.
+- Pulled-image runtime inspection found only the JAR, two executable helpers,
+  and LICENSE in `/app`; neither Maven nor Go was in the runtime. Image
+  history had no credential-pattern matches. After publication, Docker Hub
+  returned 200 for `edge` and the commit-SHA tag, and 404 for `0.0.1` and
+  `latest`. Idle usage after the scan was about 367.9 MiB, 0.88% CPU, and
+  45 PIDs on this arm64 Docker Desktop host using amd64 emulation.
+- The documented prebuilt Compose path was also exercised with
+  `DOCKER_DEFAULT_PLATFORM=linux/amd64`, `TORCHNODE_IMAGE` set to the edge
+  image, and `TORCHNODE_PULL_POLICY=always`. Compose pulled it, started a
+  healthy container on `127.0.0.1:8080`, and served Dashboard and API v1.
+  Compose was then stopped without deleting its data volume.
 
 ## CI lifecycle test correction
 
@@ -112,6 +157,6 @@ is not claimed as passed.
   and container smoke/persistence in its verify job. Its publish job failed at
   `docker/login-action@v4` before build/push with the public run annotation:
   `Error response from daemon: Get "https://registry-1.docker.io/v2/": unknown: malformed HTTP Authorization header`.
-  No secret values were inspected. Docker Hub returned 404 for `edge`,
-  `0.0.1`, and `latest` after the failure. Publication, digest, independent
-  pull, and pulled-image validation remain unproven.
+  No secret values were inspected. The repository secrets were updated by the
+  operator; the subsequent run `37299049396` passed and published as recorded
+  above. No failing gate was bypassed.
