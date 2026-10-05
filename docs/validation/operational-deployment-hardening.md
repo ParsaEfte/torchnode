@@ -88,5 +88,30 @@ is not claimed as passed.
   initial browser state was visible, but navigation failed with
   `Computer Use server error -10005: cgWindowNotFound`; the in-app browser
   reported `Browser is not available: iab`. No visual observation is claimed.
-- GitHub Actions execution, Docker Hub publication, independent pull, digest,
-  and pulled-image browser validation are pending external validation.
+- Chrome was not yet retried against a pulled image because no image had been
+  published. No pulled-image browser result is claimed.
+
+## CI lifecycle test correction
+
+- The first pushed workflow run (`37296113137`) failed its Java gate in
+  `NetworkEnrichmentLifecycleTest.queuedCancellationLateStopAndCallbackSuppression`:
+  the assertion at line 33 read `queued.isCancelled()` immediately after
+  `active.get()` observed cancellation. `close()` cancels the active and queued
+  futures sequentially, so the active wakeup does not synchronize with queued
+  cancellation. This was a test scheduling race; production lifecycle code
+  was unchanged.
+- The follow-up test waits for cancellation of the queued future itself with
+  a bounded `get`, then retains the queued-state and all callback/cache/worker
+  assertions. No sleep, timeout increase, or assertion removal was used.
+- Before the fix, 30 isolated local method runs passed despite the CI failure.
+  After the fix, 30 isolated method runs and 15 whole-class runs passed; the
+  three related enrichment/lifecycle classes passed 13 tests. `mvn test` and
+  `mvn package` each passed all 153 tests. Go test (43), vet, and race (43)
+  passed again. Follow-up commit: `addc0846117ec68256c2438a4aacef3c7e9e7830`.
+- Workflow run `37297735685` passed Java, Go, tag-policy, amd64 Docker build,
+  and container smoke/persistence in its verify job. Its publish job failed at
+  `docker/login-action@v4` before build/push with the public run annotation:
+  `Error response from daemon: Get "https://registry-1.docker.io/v2/": unknown: malformed HTTP Authorization header`.
+  No secret values were inspected. Docker Hub returned 404 for `edge`,
+  `0.0.1`, and `latest` after the failure. Publication, digest, independent
+  pull, and pulled-image validation remain unproven.

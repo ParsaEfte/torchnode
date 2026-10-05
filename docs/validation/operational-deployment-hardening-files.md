@@ -17,6 +17,7 @@ scripts/container-smoke.sh
 scripts/docker-tags.sh
 src/main/java/io/github/gavinruff007/torchnode/Main.java
 src/main/java/io/github/gavinruff007/torchnode/dashboard/DashboardServer.java
+src/test/java/io/github/gavinruff007/torchnode/enrichment/NetworkEnrichmentLifecycleTest.java
 ```
 
 Generated databases, MMDB datasets, binaries, logs, Docker image archives,
