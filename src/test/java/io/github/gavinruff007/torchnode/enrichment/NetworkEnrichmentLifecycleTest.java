@@ -28,8 +28,10 @@ class NetworkEnrichmentLifecycleTest {
         var stopper=Executors.newSingleThreadExecutor();
         try {
             var stopped=stopper.submit(service::close);
-            // Cancellation is the synchronization point; no arbitrary delay or network timing.
+            // Each future is cancelled separately; the active cancellation does not
+            // establish that close has already reached the queued future.
             assertThrows(CancellationException.class,()->active.get(5,TimeUnit.SECONDS));
+            assertThrows(CancellationException.class,()->queued.get(5,TimeUnit.SECONDS));
             assertTrue(queued.isCancelled());provider.release.countDown();stopped.get(5,TimeUnit.SECONDS);
             assertEquals(1,provider.calls.get());assertEquals(0,callbacks.get());assertEquals(0,service.metrics().get("cacheSize"));
             assertEquals(0,service.metrics().get("queued"));assertEquals(0,service.metrics().get("active"));assertEquals(0,service.metrics().get("workers"));assertEquals(true,service.metrics().get("terminated"));
