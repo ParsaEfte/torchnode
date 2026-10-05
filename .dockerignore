@@ -1,0 +1,17 @@
+.git
+.github
+.idea
+.vscode
+target
+**/target
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/*.mmdb
+**/.env
+**/.env.*
+**/*.log
+**/*.pem
+**/*.key
+**/*backup*
+docs/validation

@@ -15,13 +15,19 @@ import java.nio.file.Path;
 public class DashboardServer {
     private final int port;
     private final String databasePath;
+    private final String bindAddress;
     private final ScannerService scannerService;
     private final InspectionService inspectionService;
     private Tomcat tomcat;
 
     public DashboardServer(int port, String databasePath) {
+        this(port, databasePath, "127.0.0.1");
+    }
+
+    public DashboardServer(int port, String databasePath, String bindAddress) {
         this.port = port;
         this.databasePath = databasePath;
+        this.bindAddress = bindAddress;
         this.scannerService = new ScannerService(databasePath);
         this.inspectionService = new InspectionService(databasePath);
     }
@@ -36,7 +42,7 @@ public class DashboardServer {
         tomcat.setBaseDir(baseDir.toString());
         tomcat.setPort(port);
         tomcat.getConnector();
-        tomcat.getConnector().setProperty("address", "127.0.0.1");
+        tomcat.getConnector().setProperty("address", bindAddress);
 
         Context context = tomcat.addContext("", webRoot.toString());
         context.setParentClassLoader(DashboardServer.class.getClassLoader());

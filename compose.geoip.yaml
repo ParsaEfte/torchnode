@@ -1,0 +1,8 @@
+services:
+  torchnode:
+    environment:
+      TORCHNODE_GEOIP_COUNTRY_DB: /geoip/GeoLite2-Country.mmdb
+      TORCHNODE_GEOIP_ASN_DB: /geoip/GeoLite2-ASN.mmdb
+    volumes:
+      - ./GeoLite2-Country.mmdb:/geoip/GeoLite2-Country.mmdb:ro
+      - ./GeoLite2-ASN.mmdb:/geoip/GeoLite2-ASN.mmdb:ro

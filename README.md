@@ -2,6 +2,42 @@
 
 TorchNode discovers Ethereum nodes, inspects their public services, and stores the results in SQLite.
 
+## Docker quick start
+
+From a source checkout with Docker Compose:
+
+```sh
+docker compose up -d
+docker compose ps
+```
+
+Open <http://127.0.0.1:8080/> for the Dashboard or
+<http://127.0.0.1:8080/api/v1> for API discovery. Compose builds the JAR and
+both Go helpers inside the image, and keeps SQLite in the `torchnode-data`
+volume. Stop with `docker compose down`; that retains the volume. No host
+Maven, Java, or Go installation is needed.
+
+The official pre-release image is `parsa202089/torchnode:edge` for
+`linux/amd64` (moving, validated main branch); `sha-<12-character-sha>` tags
+identify validated commits. `latest` will mean the latest stable release,
+and is not published from main. To run the prebuilt image:
+
+```sh
+docker pull parsa202089/torchnode:edge
+docker volume create torchnode-data
+docker run -d --name torchnode --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 -v torchnode-data:/data \
+  parsa202089/torchnode:edge
+```
+
+The UI and API have **no authentication or application rate limiter**. The
+commands expose only host loopback; Internet exposure needs external TLS,
+access control, and rate limiting. GeoLite2 Country/ASN datasets are optional
+read-only mounts; absent datasets remain `DATASET_UNAVAILABLE`. See the
+[deployment guide](docs/deployment.md) for mounts, backup/restore, logs,
+restart, shutdown, and image tags. Use SQLite's backup API or `sqlite3 .backup`
+for a live database; do not raw-copy it while TorchNode is writing.
+
 The versioned, read-only [public API and bounded exports](docs/api.md) expose
 identity-scoped evidence and Network Analytics. The old network-wide `/export.csv`
 is retired. The server binds loopback; deployment remains operator controlled.
@@ -52,7 +88,8 @@ mvn package
 java -jar target/torchnode-1.0-SNAPSHOT-jar-with-dependencies.jar
 ```
 
-Open `http://localhost:8080`. Scanning, stopping, inspection, filtering, statistics, and CSV export are available in the dashboard.
+Open `http://localhost:8080`. Scanning, stopping, inspection, filtering,
+statistics, bounded API v1 exports, and reports are available in the dashboard.
 
 The main Dashboard v2 shows bounded observation coverage, a local country-level endpoint-context map, client evidence, discovery/address-family views, protocol attempts, independent RPC/Beacon probes, and derived changes. Its 24-hour, 7-day and 30-day historical windows are separate from the latest-projection node table. No peer addresses are sent to a map service. See [Dashboard v2](docs/adr/dashboard-v2.md).
 
@@ -61,6 +98,9 @@ Deep Inspection includes bounded, expandable discovery, ENR, enrichment, run, an
 `/analytics` provides a bounded UTC measurement window over recorded observations, with explicit counting units, denominators, and unknown evidence. `/analytics.json` exposes the same internal report; `/analytics/snapshot.json` is a separate latest-projection view. These observer-local counts are not Ethereum population estimates. See [Network Analytics](docs/adr/network-analytics.md).
 
 Set `TORCHNODE_PORT` or `TORCHNODE_DB` to override the default port and database path.
+Native execution binds 127.0.0.1 by default; `TORCHNODE_BIND` overrides the
+address. The Docker image sets it to 0.0.0.0 internally, with Compose publishing
+only the host loopback address.
 
 Node Inspect measures discovery, P2P TCP, RLPx Auth, devp2p Hello, ETH Status,
 JSON-RPC and Beacon API independently. The optional RLPx inspector is an isolated
@@ -153,7 +193,7 @@ necessarily the canonical chain head. A first non-fixture bidirectional ETH/72
 Status exchange was captured on Sepolia on 2026-09-25 using a verified local
 light-client context and a separate unmodified geth 1.17.6 peer. The peer was
 still at genesis, and Reth, Nethermind and Besu Status interoperability remains
-unevaluated. The P2P milestone therefore remains open. See the
+unevaluated. See the
 [inspection ADR](docs/adr/rlpx-p2p-inspection.md) for the evidence and limits.
 
 ## Optional offline network enrichment
