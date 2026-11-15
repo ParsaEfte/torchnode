@@ -40,6 +40,17 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - name: Prepare checksum-pinned SQLite for Python checks
+        shell: bash
+        run: |
+          sqlite_dir="$RUNNER_TEMP/torchnode-ci-sqlite"
+          mkdir "$sqlite_dir"
+          curl --fail --location --proto '=https' --tlsv1.2 --output "$sqlite_dir/source.zip" https://www.sqlite.org/2026/sqlite-amalgamation-3540100.zip
+          printf '%s  %s\n' 0a9c8e34352dad46006aa82836d5383bff9dc6bc9ce5a60553c05aa30e6ad1f9 "$sqlite_dir/source.zip" | sha256sum --check --strict
+          python3 -c 'import pathlib,sys,zipfile; p=pathlib.Path(sys.argv[1]); z=zipfile.ZipFile(p/"source.zip"); (p/"sqlite3.c").write_bytes(z.read("sqlite-amalgamation-3540100/sqlite3.c"))' "$sqlite_dir"
+          cc -O2 -fPIC -shared -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_COLUMN_METADATA -Wl,-soname,libsqlite3.so.0 -o "$sqlite_dir/libsqlite3.so.0" "$sqlite_dir/sqlite3.c" -ldl -lpthread -lm
+          LD_LIBRARY_PATH="$sqlite_dir:${LD_LIBRARY_PATH:-}" python3 -c "import sqlite3; assert sqlite3.sqlite_version == '3.54.1'; c=sqlite3.connect(':memory:'); c.execute('PRAGMA quick_check').fetchone(); print(sqlite3.sqlite_version)"
+          printf '%s\n' "LD_LIBRARY_PATH=$sqlite_dir:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
       - name: Enforce backup SQLite runtime policy
         run: python3 -c "import sqlite3; assert sqlite3.sqlite_version_info >= (3, 51, 3), 'SQLite >= 3.51.3 required; use a compliant Python runtime'; print(sqlite3.sqlite_version)"
       - name: Java tests and package
