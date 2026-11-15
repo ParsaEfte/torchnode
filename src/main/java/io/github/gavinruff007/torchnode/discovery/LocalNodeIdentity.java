@@ -11,7 +11,12 @@ public class LocalNodeIdentity {
     private String nodeId;
 
     public LocalNodeIdentity() throws Exception {
-        this.keyPair = Keys.createEcKeyPair();
+        this(Keys.createEcKeyPair());
+    }
+
+    /** Package-scoped deterministic identity injection for controlled protocol fixtures. */
+    LocalNodeIdentity(ECKeyPair keyPair) {
+        this.keyPair = java.util.Objects.requireNonNull(keyPair);
         BigInteger publicKey = keyPair.getPublicKey();
 
         byte[] pubKeyBytes = Numeric.toBytesPadded(publicKey, 64);

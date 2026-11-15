@@ -1,0 +1,1 @@
+Optional private checksum-inventoried public Maven cache; never copied into the final runtime image or source archive. Empty maven/.keep uses online Maven resolution. Do not seed settings.xml, credentials or private artifacts.

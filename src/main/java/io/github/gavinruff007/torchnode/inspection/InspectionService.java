@@ -52,9 +52,14 @@ public class InspectionService implements AutoCloseable {
     }
 
     public String inspect(NodeRecord node) {
+        if ("true".equals(System.getenv("TORCHNODE_COLLECTION_DISABLED")))
+            throw new IllegalStateException("Collection disabled by operator configuration");
         synchronized (persistenceLock) {
             if (closed) throw new IllegalStateException("Inspection service closed");
+            var active = activeId(node.getKey());
+            if (active.isPresent()) return active.get();
             prune();
+            if (results.size() >= 200) throw new IllegalStateException("Inspection capacity reached; wait for existing jobs");
             String id = UUID.randomUUID().toString();
             InspectionResult result = new InspectionResult(id, node);
             results.put(id, result);
@@ -105,8 +110,15 @@ public class InspectionService implements AutoCloseable {
         }
     }
 
+    public Optional<String> activeId(String key) {
+        synchronized (persistenceLock) {
+            return results.values().stream().filter(result -> result.nodeKey().equals(key) && !result.isComplete())
+                    .map(InspectionResult::id).findFirst();
+        }
+    }
+
     public Optional<Map<String, Object>> snapshot(String id) {
-        InspectionResult result = results.get(id);
+        InspectionResult result = id == null ? null : results.get(id);
         return result == null ? Optional.empty() : Optional.of(result.snapshot());
     }
 
@@ -150,7 +162,7 @@ public class InspectionService implements AutoCloseable {
                 return;
             }
             for (var endpoint : endpoints) {
-                if (closed || Thread.currentThread().isInterrupted()) break;
+                if (closed || result.isComplete() || System.nanoTime() >= result.deadlineNanos() || Thread.currentThread().isInterrupted()) break;
                 result.node().selectEndpoint(endpoint);
                 result.resetP2p();
                 inspectP2pEndpoint(result);
@@ -174,6 +186,7 @@ public class InspectionService implements AutoCloseable {
         }
         try {
             Optional<P2pInspectionResult> observation = p2pInspector.inspect(result.node());
+            if(result.isComplete())return;
             if (observation.isEmpty()) { inspectTcp(result); return; }
             P2pInspectionResult inspected = observation.get();
             recordP2pStage(result, "P2P TCP", inspected.tcp(), "Scanner");
@@ -219,12 +232,13 @@ public class InspectionService implements AutoCloseable {
         boolean endpointOpen = false;
         String lastError = null;
         for (String ip : probeAddresses(result.node())) for (int port : RPC_PORTS) {
-            if (closed || Thread.currentThread().isInterrupted()) return;
+            if (closed || result.isComplete() || System.nanoTime() >= result.deadlineNanos() || Thread.currentThread().isInterrupted()) return;
             attempted.add(EndpointAddress.http(ip, port));
             result.setRpcProbeEndpoints(attempted);
             if (!tcpOpen(ip, port, 800)) continue;
             endpointOpen = true;
-            RpcProber.RpcInfo info = rpcProber.probeDetailed(ip, port);
+            RpcProber.RpcInfo info = rpcProber.probeDetailed(ip, port, result.deadlineNanos());
+            if(result.isComplete())return;
             if (info.reachable) {
                 NodeRecord node = result.node();
                 node.setRpcAvailable(true);
@@ -252,12 +266,13 @@ public class InspectionService implements AutoCloseable {
         boolean endpointOpen = false;
         String lastError = null;
         for (String ip : probeAddresses(result.node())) for (int port : BEACON_PORTS) {
-            if (closed || Thread.currentThread().isInterrupted()) return;
+            if (closed || result.isComplete() || System.nanoTime() >= result.deadlineNanos() || Thread.currentThread().isInterrupted()) return;
             attempted.add(EndpointAddress.http(ip, port));
             result.setBeaconProbeEndpoints(attempted);
             if (!tcpOpen(ip, port, 800)) continue;
             endpointOpen = true;
-            BeaconProber.BeaconInfo info = beaconProber.probeDetailed(ip, port);
+            BeaconProber.BeaconInfo info = beaconProber.probeDetailed(ip, port, result.deadlineNanos());
+            if(result.isComplete())return;
             if (info.reachable) {
                 NodeRecord node = result.node();
                 node.setBeaconAvailable(true);
@@ -312,7 +327,11 @@ public class InspectionService implements AutoCloseable {
             } catch (Exception e) {
                 result.event("Database update failed", concise(e));
             }
-            result.complete();
+            Throwable cause=error instanceof java.util.concurrent.CompletionException && error.getCause()!=null ? error.getCause() : error;
+            boolean timedOut=cause instanceof java.util.concurrent.TimeoutException || System.nanoTime() >= result.deadlineNanos();
+            result.finish(timedOut ? "TIMED_OUT" : cause == null ? "COMPLETED"
+                    : cause instanceof java.util.concurrent.CancellationException ? "CANCELLED" : "FAILED",
+                    timedOut ? "Inspection deadline exceeded; all workers have finished" : cause == null ? null : concise(cause));
         }
     }
 
@@ -389,12 +408,12 @@ public class InspectionService implements AutoCloseable {
 
     private void prune() {
         if (results.size() < 200) return;
-        results.keySet().stream().limit(50).toList().forEach(results::remove);
+        results.values().stream().filter(InspectionResult::isComplete).map(InspectionResult::id).limit(50).toList().forEach(results::remove);
     }
 
     @Override
     public void close() {
-        synchronized (persistenceLock) { closed = true; generation++; }
+        synchronized (persistenceLock) { closed = true; generation++; results.values().forEach(result -> result.finish("CANCELLED", "Inspection service stopped")); }
         enrichment.close();
         enrAcquirer.close(); executor.shutdownNow();
         activeSockets.forEach(socket -> { try { socket.close(); } catch (java.io.IOException ignored) {} });

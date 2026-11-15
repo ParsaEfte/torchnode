@@ -1,5 +1,7 @@
 # TorchNode Observatory
 
+> **v1.0.0 publication is pending mandatory approvals. Recovery is NOT VERIFIED.** Authentication is required; new writable startup and administrator provisioning initialize observation schema v6. Existing v5 installations must follow the separately approved backup, offline migration validation and cutover gates in [the v1.0 release checklist](docs/release-checklist-v1.0.md). Do not use startup or provisioning to inspect an existing database.
+
 **Ethereum network observability below the RPC layer.** TorchNode discovers
 cryptographic node identities, inspects public protocol and service endpoints,
 and stores timestamped evidence in a local SQLite database. Its Dashboard,
@@ -7,38 +9,51 @@ History, Changes, Network Analytics, Reports, and read-only API show what this
 observer measured. They do not estimate the entire Ethereum network.
 
 [![CI and Docker distribution](https://github.com/ParsaEfte/torchnode/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ParsaEfte/torchnode/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[Distribution license scope](DISTRIBUTION-LICENSE.md) · [project MIT grant](LICENSE)
 
-## Quick Start: v0.0.1 Docker image
+## Release status
 
-Docker Engine or Docker Desktop is required. The published image supports
-**linux/amd64**; Docker Desktop can run it through emulation on an arm64 host.
+The covered application/geth-helper combination is conveyed under GPLv3; existing project MIT and component grants remain. See [distribution scope](DISTRIBUTION-LICENSE.md) and [matching source/relink delivery](SOURCE-DELIVERY.md). Public delivery and final artifact approvals remain required. Recovery is NOT VERIFIED; production deployment remains outside this release.
+
+The tested and supported installation scope is a new, empty non-production database. This is not a field-of-use restriction on recipient license rights. Retained-checkpoint restore, crash/WAL recovery and rollback are NOT VERIFIED; do not point this release at an existing or production database. Production deployment and the existing v5 rollback gate remain separate and blocked.
+
+The default Maven and Docker builds precompile all JSP views; the executable release JAR excludes ECJ and dynamic JSP compilation. Build tools retain their own licenses.
+
+## New installation from source
+
+Use a **new, empty database path**. Java 21+, Maven, Go 1.26.11 and Node.js for DOM
+checks are required. The Python safety tools additionally require native SQLite
+3.51.3 or newer; this is separate from the bundled JDBC runtime.
 
 ```sh
-docker pull --platform linux/amd64 parsa202089/torchnode:0.0.1
-docker volume create torchnode-data
-docker run -d --name torchnode --platform linux/amd64 --restart unless-stopped \
-  -p 127.0.0.1:8080:8080 -v torchnode-data:/data \
-  parsa202089/torchnode:0.0.1
+mvn package
+(cd p2p-helper && go build -o ../target/torchnode-p2p-helper .)
+(cd p2p-helper && go build -o ../target/torchnode-discovery-helper ./cmd/discovery)
+mkdir -m 700 "$HOME/torchnode-data"
+export TORCHNODE_DB="$HOME/torchnode-data/observatory.sqlite"
+# Loopback HTTP development only; keep Secure cookies for HTTPS deployments.
+export TORCHNODE_SECURE_COOKIES=false
+java -jar target/torchnode-1.0.0-jar-with-dependencies.jar --provision-admin
+java -jar target/torchnode-1.0.0-jar-with-dependencies.jar
 ```
 
-Open the [Dashboard](http://127.0.0.1:8080/) or [API v1](http://127.0.0.1:8080/api/v1).
-Stop with `docker stop torchnode`; restart with `docker start torchnode`.
-The named volume retains `/data/torchnode.db` across container recreation.
-Use one TorchNode container per database volume.
+Provisioning requires an interactive terminal; there are no default credentials.
+Open <http://127.0.0.1:8080/> and sign in. ADMIN can collect/inspect/manage users;
+VIEWER can read stored evidence. API reads require the same server-side session;
+export routes require ADMIN. Login is throttled; exposed deployments still need
+TLS, edge rate limiting and access controls. Do not run a second writer against
+the same database.
 
-The UI and API have **no authentication or application rate limiter**. The
-command publishes port 8080 on host loopback only. Public Internet exposure
-requires external TLS, authentication, access control, and rate limiting.
-No inbound Ethereum port is published.
+For a new Docker installation, helper packaging, interactive provisioning,
+cookies, persistent volumes and **separately approved upgrades**, see the
+[deployment guide](docs/deployment.md). The published **0.0.1 image is a legacy
+release** with different authentication/schema behavior; it is not this candidate.
+No v1.0 image or production upgrade is claimed here.
 
-From a source checkout, `docker compose up -d` builds the image without host
-Java, Maven, or Go; `docker compose down` retains its data volume. For Compose
-with the prebuilt release image, optional GeoLite2 mounts, logs, backups, and
-restore, see the [deployment guide](docs/deployment.md). Optional Country and
-ASN datasets are not bundled; without them, lookups report
-`DATASET_UNAVAILABLE`. `edge` remains a moving development tag; `latest`
-tracks the latest stable release. Prefer `0.0.1` for a repeatable deployment.
+See [configuration and troubleshooting](docs/configuration.md),
+[security and privacy](SECURITY.md), [architecture](docs/architecture.md),
+[contributing](CONTRIBUTING.md), and the [v1.0 release checklist](docs/release-checklist-v1.0.md).
+Optional GeoLite2 datasets are not bundled; absent files report `DATASET_UNAVAILABLE`.
 
 ## Evidence and architecture
 
@@ -65,13 +80,13 @@ discv4 + discv5 discovery -> cryptographic node identity -> ENR / endpoints
 
 The [public API guide](docs/api.md) covers bounded identity history and
 exports; `/api/v1` is the discovery route. The former network-wide
-`/export.csv` returns HTTP 410. See the [v0.0.1 release notes](docs/release-notes-v0.0.1.md),
+`/export.csv` returns HTTP 410. See the [v0.0.1 release notes](docs/release-validation.md),
 [changelog](CHANGELOG.md), and [MIT license](LICENSE).
 
 Discovery uses a provider boundary with independent discv4 and discv5 providers.
 Cryptographic node identities are separate from endpoint observations, whose
 source, provenance and timestamps are retained in SQLite. See the
-[discovery architecture decision](docs/adr/discovery-architecture.md).
+[discovery architecture decision](docs/release-validation.md).
 
 Completed deep inspections and background API scans are now retained as
 measurement occurrences, with bounded identity history in Deep Inspection.
@@ -80,14 +95,14 @@ its own time and outcome. Existing node rows remain the latest projection;
 history records factual observations. A separate, bounded Deep Inspection
 section shows conservative derived comparisons between compatible evidence;
 the observations remain authoritative. See the
-[historical observations ADR](docs/adr/historical-observations.md) and
-[change detection ADR](docs/adr/change-detection.md).
+[historical observations ADR](docs/release-validation.md) and
+[change detection ADR](docs/release-validation.md).
 
 TorchNode acquires and validates real ENRs over discv4 and discv5, preserving raw records,
 sequence, unknown fields and advertised endpoints independently of discovery
 and P2P evidence. Trusted IPv4 and IPv6 endpoints support active discovery and
-inspection. See [ENR support](docs/adr/enr-support.md) and
-[Active IPv6 support](docs/adr/active-ipv6-support.md).
+inspection. See [ENR support](docs/release-validation.md) and
+[Active IPv6 support](docs/release-validation.md).
 
 discv5 uses the pinned geth discovery engine through a separate helper. Build it
 before scanning with both providers:
@@ -101,27 +116,25 @@ cd ..
 Set `TORCHNODE_DISCV5_HELPER` to override its path and
 `TORCHNODE_DISCV5_BOOTSTRAPS` to an ENR configuration file. Missing or failed
 helpers leave discv4 available. Observatory counts cryptographic identities;
-endpoint observations remain preserved. See [discv5 architecture](docs/adr/discv5-support.md).
+endpoint observations remain preserved. See [discv5 architecture](docs/release-validation.md).
 Both endpoint families retain their provenance under one cryptographic identity.
 IPv6 discovery, TCP/RLPx, and HTTP transport have deterministic loopback coverage;
 public IPv6 success depends on observer connectivity. See the
-[IPv6 validation report](docs/validation/active-ipv6-support.md).
+[IPv6 validation report](docs/release-validation.md).
 
-## Build and run
+## Dashboard and stored evidence
 
-```shell
-mvn package
-java -jar target/torchnode-1.0-SNAPSHOT-jar-with-dependencies.jar
-```
+Use the isolated new-installation commands above to build and start. Existing
+installations require the upgrade gates; `mvn package` does not authorize startup
+against their databases. Filtering, historical analytics, bounded API exports and
+reports read stored evidence. Collection and active inspection are explicit ADMIN
+actions.
 
-Open `http://localhost:8080`. Scanning, stopping, inspection, filtering,
-statistics, bounded API v1 exports, and reports are available in the dashboard.
+The main Dashboard v2 shows bounded observation coverage, a local country-level endpoint-context map, client evidence, discovery/address-family views, protocol attempts, independent RPC/Beacon probes, and derived changes. Its 24-hour, 7-day and 30-day historical windows are separate from the latest-projection node table. No peer addresses are sent to a map service. See [Dashboard v2](docs/release-validation.md).
 
-The main Dashboard v2 shows bounded observation coverage, a local country-level endpoint-context map, client evidence, discovery/address-family views, protocol attempts, independent RPC/Beacon probes, and derived changes. Its 24-hour, 7-day and 30-day historical windows are separate from the latest-projection node table. No peer addresses are sent to a map service. See [Dashboard v2](docs/adr/dashboard-v2.md).
+Deep Inspection includes bounded, expandable discovery, ENR, enrichment, run, and derived-change history. The [Network Measurement Report](http://localhost:8080/reports/network) prints a selected Network Analytics window with units, denominators, unknowns, and methodology; browser Print can save it as a PDF. Reports are live views of stored evidence, not immutable snapshots. See [History UX and reports](docs/release-validation.md).
 
-Deep Inspection includes bounded, expandable discovery, ENR, enrichment, run, and derived-change history. The [Network Measurement Report](http://localhost:8080/reports/network) prints a selected Network Analytics window with units, denominators, unknowns, and methodology; browser Print can save it as a PDF. Reports are live views of stored evidence, not immutable snapshots. See [History UX and reports](docs/adr/history-ux-reports.md).
-
-`/analytics` provides a bounded UTC measurement window over recorded observations, with explicit counting units, denominators, and unknown evidence. `/analytics.json` exposes the same internal report; `/analytics/snapshot.json` is a separate latest-projection view. These observer-local counts are not Ethereum population estimates. See [Network Analytics](docs/adr/network-analytics.md).
+`/analytics` provides a bounded UTC measurement window over recorded observations, with explicit counting units, denominators, and unknown evidence. `/analytics.json` exposes the same internal report; `/analytics/snapshot.json` is a separate latest-projection view. These observer-local counts are not Ethereum population estimates. See [Network Analytics](docs/release-validation.md).
 
 Set `TORCHNODE_PORT` or `TORCHNODE_DB` to override the default port and database path.
 Native execution binds 127.0.0.1 by default; `TORCHNODE_BIND` overrides the
@@ -131,17 +144,17 @@ only the host loopback address.
 Node Inspect measures discovery, P2P TCP, RLPx Auth, devp2p Hello, ETH Status,
 JSON-RPC and Beacon API independently. The optional RLPx inspector is an isolated
 Go helper using pinned go-ethereum; the Java dashboard still builds and runs
-without it. See [the architecture decision](docs/adr/rlpx-p2p-inspection.md).
+without it. See [the architecture decision](docs/release-validation.md).
 
 ## Enable authenticated P2P inspection
 
 From the repository root, build the Java jar and the companion helper with Go
-1.25 or newer (or Go's automatic toolchain download):
+1.26.11 (the release helper toolchain is pinned in go.mod and Docker):
 
 ```shell
 mvn package
 (cd p2p-helper && GOTOOLCHAIN=auto go build -o ../target/torchnode-p2p-helper .)
-java -jar target/torchnode-1.0-SNAPSHOT-jar-with-dependencies.jar
+java -jar target/torchnode-1.0.0-jar-with-dependencies.jar
 ```
 
 The application discovers an executable `torchnode-p2p-helper` beside its jar
@@ -220,7 +233,7 @@ Status exchange was captured on Sepolia on 2026-09-25 using a verified local
 light-client context and a separate unmodified geth 1.17.6 peer. The peer was
 still at genesis, and Reth, Nethermind and Besu Status interoperability remains
 unevaluated. See the
-[inspection ADR](docs/adr/rlpx-p2p-inspection.md) for the evidence and limits.
+[inspection ADR](docs/release-validation.md) for the evidence and limits.
 
 ## Optional offline network enrichment
 
@@ -260,5 +273,29 @@ version. Same-version stored results (including misses/failures) are reused;
 there are no automatic retries or background dataset updates. Prior-version
 records remain evidence, and UI/export show the latest known lookup, explicitly
 separate from the endpoint observation time. See the
-[ADR](docs/adr/geoip-asn-enrichment.md) and
-[validation](docs/validation/geoip-asn-enrichment.md).
+[ADR](docs/release-validation.md) and
+[validation](docs/release-validation.md).
+
+### Network Topology Intelligence
+
+The authenticated `/topology` page provides bounded identity/observer/protocol/UTC
+filters, immutable provenance drill-downs, comparison, ADMIN-only JSON export and
+printable reports. New eligible discv5 evidence can yield directed
+`REPORTED_NEIGHBOR` observations after persisted responder/request/run/ENR evidence
+is revalidated. These mean an authenticated responder reported a target ENR;
+**they do not prove TCP, RLPx, ETH or any active peer connection**. Legacy identities
+remain unlinked, discv4 candidates remain non-promotable, and collection/network
+coverage are unknown. See the [current API contract](docs/api.md) and
+[evidence architecture](docs/architecture.md). Production v1.0 migration and cutover
+remain gated by the [release checklist](docs/release-checklist-v1.0.md).
+
+## v1.0 security and recovery engineering
+
+The v6-only recovery target remains conditional. The original v5 rollback gate is active until explicitly replaced; retained-data rehearsal and deployment require separate authorization. See the [recovery policy](docs/recovery-rollback-policy.md), [rehearsal boundary](docs/release-validation.md) and [release gates](docs/release-checklist-v1.0.md). Historical retained-snapshot validation does not establish current production ingestion or a final cutover checkpoint.
+
+Release helper builds use Go 1.26.11 and patched module pins. Security checks cover the full Maven/Go inventory, Go symbol/binary analysis and the actual image, using pinned tools and advisory provenance. Unresolved image findings and license distribution decisions remain visible gates; no scanner suppression or waiver is implied. See [security guidance](SECURITY.md).
+
+[MIT](LICENSE) covers TorchNode-owned source. The helper binaries include copyleft geth code. Preserve the [third-party notices](THIRD_PARTY_NOTICES.md), matching corresponding-source materials and [distribution review](docs/third-party-licenses.md).
+
+
+Current security/license engineering evidence (2026-11-14): [candidate closure report](docs/release-validation.md). The candidate uses SQLite JDBC3.54.1.0 and a minimal pinned musl/Temurin Java21 runtime with a Java-only healthcheck. No shell, curl, package manager or system crypto/SQLite libraries are shipped. Zero image findings does not approve distribution, retained recovery, v5-policy replacement or deployment. Those gates remain explicit; deployment is NO-GO.

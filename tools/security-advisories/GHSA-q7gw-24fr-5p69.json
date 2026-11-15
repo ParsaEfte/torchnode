@@ -1,0 +1,35 @@
+{
+  "ghsa_id": "GHSA-q7gw-24fr-5p69",
+  "html_url": "https://github.com/advisories/GHSA-q7gw-24fr-5p69",
+  "updated_at": "2026-11-13T19:00:56Z",
+  "withdrawn_at": null,
+  "vulnerabilities": [
+    {
+      "package": {
+        "ecosystem": "go",
+        "name": "go.opentelemetry.io/otel/sdk"
+      },
+      "vulnerable_version_range": ">= 1.33.0, < 1.47.0",
+      "first_patched_version": "1.47.0",
+      "vulnerable_functions": []
+    },
+    {
+      "package": {
+        "ecosystem": "go",
+        "name": "go.opentelemetry.io/otel/sdk/log"
+      },
+      "vulnerable_version_range": ">= 0.9.0, < 1.47.0",
+      "first_patched_version": "1.47.0",
+      "vulnerable_functions": []
+    },
+    {
+      "package": {
+        "ecosystem": "go",
+        "name": "go.opentelemetry.io/otel/trace"
+      },
+      "vulnerable_version_range": ">= 1.35.0, < 1.47.0",
+      "first_patched_version": "1.47.0",
+      "vulnerable_functions": []
+    }
+  ]
+}

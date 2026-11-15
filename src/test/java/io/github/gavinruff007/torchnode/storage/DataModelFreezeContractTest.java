@@ -42,11 +42,11 @@ class DataModelFreezeContractTest {
             assertEquals(2, count(path, "discovery_observations", "node_id='" + first.nodeId() + "'"));
             assertEquals(3, count(path, "discovery_observations", "1=1"));
             assertEquals(changesBeforeRead, count(path, "change_events", "1=1"));
-            assertEquals(5, count(path, "schema_migrations", "1=1"));
+            assertEquals(6, count(path, "schema_migrations", "1=1"));
 
             store.clearCollectedData();
             assertEquals(0, bucket(analytics.measure(scope), "observed-identities", "observed"));
-            assertEquals(5, count(path, "schema_migrations", "1=1"));
+            assertEquals(6, count(path, "schema_migrations", "1=1"));
             store.saveObservation(observation(first, "discv4", "192.0.2.2", start.plusSeconds(1)));
         }
         try (var reopened = new SqliteNodeStore(path)) {

@@ -1,115 +1,59 @@
-# Container deployment
+> **Recovery NOT VERIFIED.** These installation examples apply only to new, empty non-production storage. Existing-data use is outside tested support. The original operator’s production deployment remains prohibited without a verified recovery policy and separate authorization; these operational limits do not restrict recipients’ open-source license rights.
 
-TorchNode is an operator-controlled, single-instance observatory. Its web UI and
-read-only API have no authentication or application rate limiter. The default
-Compose file publishes port 8080 on host loopback only. Do not publish it to
-the Internet without external TLS, authentication, access control, and rate
-limiting. Outbound discovery and inspection use ordinary container networking;
-no inbound Ethereum port is published.
+# Deployment and controlled upgrade
 
-## Start from source
+This is an unreleased v1.0 candidate. Authentication is required, observation schema is v6, health is static `/healthz`, and a production upgrade is not yet accepted. The old published 0.0.1 image has different security/schema behavior. Do not substitute it for this candidate or use it as an unverified rollback binary on v6.
 
-With Docker and Compose installed:
+## New, empty installation only
+
+Docker builds both Go helpers and the Java JAR. The image runs UID/GID 10001, stores `/data/torchnode.db`, binds internally to 0.0.0.0:8080, and Compose publishes host loopback. Use one instance per database volume. Do not mount an existing installation into these commands.
 
 ```sh
-docker compose up -d
-docker compose ps
-```
-
-Open <http://127.0.0.1:8080/> or <http://127.0.0.1:8080/api/v1>.
-Compose builds the Java application and both Go helpers inside the image.
-No host Java, Maven, or Go installation is required. The named
-`torchnode-data` volume stores `/data/torchnode.db`. Use only one TorchNode
-container per database volume. Docker Desktop's named-volume location is
-managed by Docker. `docker compose down` keeps the volume; **do not use**
-`down -v` unless you intend to delete collected evidence.
-
-```sh
+docker compose build
+# Interactive provisioning against a NEW volume; initializes schema v6.
+docker compose run --rm --no-deps torchnode --provision-admin
+# For loopback HTTP development only:
+TORCHNODE_SECURE_COOKIES=false docker compose up -d
 docker compose logs -f torchnode
-docker compose restart torchnode
-docker compose down
 ```
 
-The image runs as UID/GID 10001 and its HTTP service binds `0.0.0.0:8080`
-inside the container. Compose publishes only `127.0.0.1:8080`. For a direct
-Docker run, publish `127.0.0.1:8080:8080` and mount a writable volume at
-`/data`. Native Java execution keeps the loopback bind by default; the
-`TORCHNODE_BIND` environment variable can override it. `TORCHNODE_PORT`
-selects the HTTP port and `TORCHNODE_DB` selects the database path. If you
-change the port inside the image, update its health check/publishing as well.
+Provisioning needs a TTY and no default credentials exist. Secure cookies remain required for HTTPS exposure. Add external TLS/access control/aggregate rate limiting. Login throttling alone is insufficient. `docker compose down` preserves volume data; `down -v` destroys it and is not a routine upgrade step. No inbound Ethereum port is published. Optional MMDB mounts are in `compose.geoip.yaml`; datasets have separate terms.
 
-## Prebuilt image and tags
+The JAR keeps internal `1.0-SNAPSHOT`; no v1.0 image/tag is claimed published. Stable tags are produced only after approved release gates and CI; current distribution supports linux/amd64. Arm64 needs separate runtime validation.
 
-The official Docker Hub repository is `parsa202089/torchnode` (the GitHub
-repository is `ParsaEfte/torchnode`). The immutable v0.0.1 release image is
-`0.0.1`; `latest` tracks the latest stable release. `edge` is the moving
-validated main-branch image, while `sha-<12-character-sha>` identifies a
-validated development commit. Stable `vX.Y.Z` Git tags publish `X.Y.Z`,
-`X.Y`, `X`, and `latest` after validation; release-version tags are not
-overwritten.
-Only `linux/amd64` is published until `linux/arm64` receives independent
-runtime validation. The Maven JAR currently retains its internal
-`1.0-SNAPSHOT` version; image tags identify the distribution.
+## Existing installation: distinct approval gates
 
-```sh
-docker pull --platform linux/amd64 parsa202089/torchnode:0.0.1
-docker volume create torchnode-data
-docker run -d --name torchnode --platform linux/amd64 --restart unless-stopped \
-  -p 127.0.0.1:8080:8080 -v torchnode-data:/data \
-  parsa202089/torchnode:0.0.1
-```
+1. **Online backup:** fresh metadata/process/runtime/hash-bound expiring single-use approval for one source. Monitoring/abort/retention are mandatory. Risk acceptance does not authorize execution. Do not copy an active DB file.
+2. **Offline migration validation:** after human acceptance of the verified online backup, obtain separate permission naming its immutable hash, disposable workspace, tool/JDK hashes and resource bounds. Only that copy may undergo v5-to-v6 dry-run. Compare historical schemas/counts/digests, integrity/FK/history, idempotence, injected failure recovery and application fixture startup. Preserve original backup and reports.
+3. **Cutover:** separate maintenance approval must identify old/new binary/helper/config hashes, exact source/target paths, process manager, stop/start order and rollback authority. No production migration, shutdown or restart is implied by either earlier approval.
 
-The explicit platform works on amd64 and permits Docker Desktop on an arm64
-host to run this single-platform image through emulation. A plain `docker
-pull` on an arm64 host fails with `no matching manifest for linux/arm64/v8`.
+## Controlled cutover plan — NOT executed
 
-Compose also accepts the published image: set
-`TORCHNODE_IMAGE=parsa202089/torchnode:0.0.1` and
-`TORCHNODE_PULL_POLICY=always` for `docker compose up -d`; on arm64 also set
-`DOCKER_DEFAULT_PLATFORM=linux/amd64`. The default
-Compose path builds locally. Do not run the direct Docker and Compose
-examples against the same data volume concurrently.
+Record current process/config/observer identity and approved health evidence. Obtain an independently stored, verified rollback checkpoint. Stop the approved writer cleanly through its actual process manager, verify every writer closed, and take a **fresh final consistent v5 backup** after shutdown. An earlier online snapshot omits later writes and is not that final checkpoint. Preserve required observer identity/key material and configuration privately under separate authority.
 
-The image carries the Java runtime and executable P2P/discv5 helpers. It does
-not contain private scanner keys, MMDB datasets, Maven, or Go. The discv5
-helper receives ephemeral key material over stdin. Java is PID 1 and handles
-`docker stop` through its shutdown hook. Runtime logs go to `docker logs`.
-The health check probes the lightweight, read-only `/api/v1` discovery route.
+Verify final backup integrity, exact history 1–5, historical counts/digests and hash before migration. Freeze reviewed artifacts/config. Start one approved upgrader/new instance only; writable startup performs schema initialization. Verify exact history 1–6, historical preservation, FK/integrity, authentication/roles, static HTTP, explicitly observed collector behavior, bounded topology provenance, and error/latency changes. No parallel writers or automated retry. Capture results before declaring cutover accepted.
 
-## Optional GeoLite2 datasets
+## Rollback — separate explicit approval
 
-Obtain Country and ASN MMDB files under their provider terms. They are not
-downloaded, bundled, or needed to start TorchNode. With files in the checkout
-root, run:
+Old-binary-on-v6 compatibility is unverified. Never point an old binary at migrated storage. Stop/reap the approved new writers, preserve failed artifacts, then restore the verified final **v5** checkpoint into a separately reviewed location with the previous compatible binary/helpers/configuration/observer state and correct ownership. Account for lost writes since that checkpoint. Test restore on a disposable volume first. Authentication behavior of legacy code may differ; keep access isolated. Check integrity/schema, historical counts/digests and operator-observed runtime health before rollback acceptance.
 
-```sh
-docker compose -f compose.yaml -f compose.geoip.yaml up -d
-```
+## Current v6 recovery target
 
-The override mounts the two files read-only at `/geoip` and sets
-`TORCHNODE_GEOIP_COUNTRY_DB` and `TORCHNODE_GEOIP_ASN_DB`. Without datasets,
-lookups remain `DATASET_UNAVAILABLE`. City MMDB is not used. On bind-mounted
-host directories, grant UID 10001 write access to `/data`; MMDB files need
-only read access.
+The v5-specific procedure above remains the original, unfulfilled policy; a marker-6 retained snapshot cannot satisfy it. The operator selected v6-only recovery as the target, subject to [the explicit replacement policy](recovery-rollback-policy.md). No migration, backup, stop/start, restore or deployment is authorized by that target selection. Prepare and separately authorize only the exact disposable retained-data rehearsal package in [the recovery boundary](release-validation.md). A future v6 cutover needs a fresh final v6-compatible checkpoint after an explicitly approved writer shutdown, plus the accepted recovery artifact/configuration/observer tuple.
 
-## Backup and restore
+The candidate image carries the matching SQLite JNI library at `/app/lib/libsqlitejdbc.so`; preserve `JAVA_TOOL_OPTIONS=-Dorg.sqlite.lib.path=/app/lib` when setting other JVM options. Temporary storage can remain `noexec`. Synthetic validation publishes no host port and mounts only owned disposable storage. Never use the production Compose stack for these tests.
 
-Keep the database on a local Docker volume, not an ephemeral container layer
-or shared network filesystem. For a consistent online backup, use SQLite's
-backup API or `sqlite3 .backup` from a trusted environment with access to the
-volume. Do not copy a live database file while it may be written. To restore,
-stop TorchNode, put a verified backup at `/data/torchnode.db` with UID 10001
-ownership, restart, then check health and SQLite integrity/schema version.
-Test restore using a separate volume before depending on a backup.
+## Validation and release
 
-## CI and limits
+CI runs Java/Python/Go/race/vet/DOM checks, enforces Python SQLite policy, builds linux/amd64 and tests a disposable container volume. Local Docker execution remains unverified when its daemon is unavailable. Never start a daemon or alter a production service just to satisfy this check. See [release checklist](release-checklist-v1.0.md), [configuration](configuration.md), [security](../SECURITY.md) and detailed [B6-B safety](release-validation.md).
 
-Pull requests run Java, Go, Docker build, and container smoke/persistence
-checks without Docker Hub credentials. Main runs the same checks before
-publishing `edge` and the commit-SHA tag. Stable Git tags run the checks before
-publishing release tags. The workflow uses Docker Hub repository secrets,
-never build arguments. Base images and GitHub Actions have explicit version
-tags; update them through reviewed changes and revalidate both helpers.
-The deployment is a single writer. No application-level rate limiter, inbound
-TLS, or authentication is provided. Docker host IPv6 routing varies, so a
-container's IPv6 reachability must be measured in its actual environment.
+Reproducible image engineering uses `tools/build-isolated-image.py` on an explicitly marked temporary source copy or a clean CI checkout. It fixes source timestamps, recompiles Java/Go and compares manifests/configs/archives. No registry push occurs. Container smoke consumes an immutable local ID. CI includes inventory, symbol and actual-image security gates; publication is manual and subject to the release environment. A failed image-security gate is not overridden by passing runtime tests.
+
+The [third-party notices](../THIRD_PARTY_NOTICES.md) and [source distribution review](third-party-licenses.md) accompany the binaries. Source/notice completeness and the exact final release commit/version/checksums still require review before separately authorized publication.
+
+
+Current security/license engineering evidence (2026-11-14): [candidate closure report](release-validation.md). The candidate uses SQLite JDBC3.54.1.0 and a minimal pinned musl/Temurin Java21 runtime with a Java-only healthcheck. No shell, curl, package manager or system crypto/SQLite libraries are shipped. Zero image findings does not approve distribution, retained recovery, v5-policy replacement or deployment. Those gates remain explicit; deployment is NO-GO.
+
+## Current recovery stop
+
+Both retained-checkpoint attempts are consumed and stopped before copying/container startup. Attempt 2 identified an st_dev difference; [cause and policy tradeoffs](release-validation.md) remain under review. No attempt 3 is justified under the unchanged binding. New installation examples above do not authorize touching an existing installation. Publication preparation is in [the release plan](release-publication-plan.md); publication and deployment remain separate approvals.

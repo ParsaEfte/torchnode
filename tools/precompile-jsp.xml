@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="precompiled-release" default="package" basedir="..">
+  <target name="package">
+    <fail unless="app.jar" message="Explicit input application JAR required"/>
+    <fail unless="out.dir" message="Fresh output directory required"/>
+    <available file="${out.dir}" property="output.exists"/><fail if="output.exists" message="Output collision"/>
+    <mkdir dir="${out.dir}/input"/><mkdir dir="${out.dir}/generated"/><mkdir dir="${out.dir}/classes"/>
+    <unzip src="${app.jar}" dest="${out.dir}/input"><patternset includes="webapp/**"/></unzip>
+    <touch millis="1794528000000"><fileset dir="${out.dir}/input"/></touch>
+    <java classname="org.apache.jasper.JspC" fork="true" failonerror="true" timeout="90000">
+      <classpath><pathelement location="${app.jar}"/><pathelement path="${java.class.path}"/><pathelement path="${build.tools.classpath}"/></classpath>
+      <arg value="-uriroot"/><arg file="${out.dir}/input/webapp"/><arg value="-d"/><arg file="${out.dir}/generated"/>
+      <arg value="-webinc"/><arg file="${out.dir}/mappings.xml"/><arg value="-source"/><arg value="21"/>
+      <arg value="-target"/><arg value="21"/><arg value="-failFast"/>
+    </java>
+    <concat destfile="${out.dir}/web.xml"><header>&lt;web-app&gt;</header><filelist dir="${out.dir}" files="mappings.xml"/><footer>&lt;/web-app&gt;</footer></concat>
+    <xslt in="${out.dir}/web.xml" out="${out.dir}/classes/torchnode-precompiled-jsp.properties" style="tools/jsp-mappings.xsl"/>
+    <condition property="registry.exact"><filesmatch file1="${out.dir}/classes/torchnode-precompiled-jsp.properties" file2="tools/precompiled-views.properties"/></condition>
+    <fail unless="registry.exact" message="Generated view mappings differ from the exact eight-view registry"/>
+    <javac srcdir="${out.dir}/generated" destdir="${out.dir}/classes" release="21" encoding="UTF-8" includeantruntime="false" fork="true">
+      <classpath><pathelement location="${app.jar}"/></classpath>
+    </javac>
+    <zip destfile="${out.dir}/torchnode.jar" level="9" modificationtime="1794528000000" filesonly="true" duplicate="fail">
+      <zipfileset src="${app.jar}" excludes="org/eclipse/jdt/**,META-INF/maven/org.eclipse.jdt/ecj/**,**/*.jsp,META-INF/services/javax.tools.JavaCompiler"/>
+      <fileset dir="${out.dir}/classes"/>
+    </zip>
+  </target>
+</project>

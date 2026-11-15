@@ -5,6 +5,8 @@ services:
     pull_policy: ${TORCHNODE_PULL_POLICY:-build}
     ports:
       - "127.0.0.1:8080:8080"
+    environment:
+      TORCHNODE_SECURE_COOKIES: ${TORCHNODE_SECURE_COOKIES:-true}
     volumes:
       - torchnode-data:/data
     restart: unless-stopped

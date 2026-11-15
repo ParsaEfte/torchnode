@@ -19,6 +19,12 @@ public class FindNodeSender {
 
     public static void sendFindNode(LocalNodeIdentity myNode, String targetIP, int targetPort,
                                     DatagramSocket socket, byte[] targetNodeId) throws Exception {
+        sendFindNode(myNode, targetIP, targetPort, socket, targetNodeId, null, null);
+    }
+
+    public static void sendFindNode(LocalNodeIdentity myNode, String targetIP, int targetPort,
+                                    DatagramSocket socket, byte[] targetNodeId,
+                                    Discv4EvidenceCapture capture, String expectedResponderIdentity) throws Exception {
         InetAddress targetAddr = InetAddress.getByName(targetIP);
 
         if (targetNodeId.length != 64) {
@@ -35,7 +41,9 @@ public class FindNodeSender {
         byte[] packet = buildPacket((byte) 0x03, payload, myNode.getKeyPair());
 
         DatagramPacket udpPacket = new DatagramPacket(packet, packet.length, targetAddr, targetPort);
-        socket.send(udpPacket);
+        if (capture == null) socket.send(udpPacket);
+        else capture.sendFindNode(packet, new java.net.InetSocketAddress(targetAddr, targetPort),
+                expectedResponderIdentity, targetNodeId, () -> socket.send(udpPacket));
 
         System.out.println("📤 FindNode sent to " + io.github.gavinruff007.torchnode.model.EndpointAddress.hostPort(targetIP, targetPort));
         System.out.println("   Target: " + Hex.toHexString(targetNodeId));

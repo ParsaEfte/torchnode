@@ -4,7 +4,8 @@ import vm from 'node:vm';
 
 const source = fs.readFileSync('src/main/resources/webapp/assets/dashboard-v2.js', 'utf8');
 class Element {
-    constructor(tag = 'div') { this.tag = tag; this.children = []; this.textContent = ''; this.style = {}; this.listeners = {}; this.attributes = {}; this.classList = {add() {}}; }
+    constructor(tag = 'div') { this.tag = tag; this.children = []; this.textContent = ''; this.style = {}; this.listeners = {}; this.attributes = {}; this.classList = {add() {}}; this.dataset = {}; this.value = '';  }
+    get rows() { return this.children; }
     append(...children) { this.children.push(...children); }
     replaceChildren(...children) { this.children = [...children]; }
     addEventListener(type, callback) { this.listeners[type] = callback; }
@@ -15,7 +16,7 @@ class Element {
     querySelector() { return this.titleElement; }
 }
 const elements = Object.fromEntries(['visual-analytics', 'measurement-scope', 'refresh-measurement',
-    'measurement-status', 'clear-form'].map(id => [id, new Element()]));
+    'measurement-status', 'clear-form', 'controls'].map(id => [id, new Element()]));
 elements['measurement-scope'].value = '1';
 const bucket = (label, count) => ({label, count});
 const metrics = [
@@ -49,11 +50,11 @@ const shape = new Element('path');
 shape.setAttribute('data-country', 'US'); shape.setAttribute('data-name', 'United States');
 shape.titleElement = new Element('title'); map.paths = [shape];
 const context = vm.createContext({
-    document: {getElementById: id => elements[id], createElement: tag => new Element(tag), importNode: value => value},
+    document: {getElementById: id => elements[id], querySelector: () => elements.controls, createElement: tag => new Element(tag), createTextNode: text => Object.assign(new Element('text'),{textContent:text}), createElementNS: (_,tag) => new Element(tag), importNode: value => value},
     window: {addEventListener() {}},
     DOMParser: class { parseFromString() { return {documentElement: map}; } },
-    fetch: async url => url.includes('world-countries.svg') ? {ok: true, text: async () => '<svg/>'} :
-        {ok: true, json: async () => report},
+    fetch: async url => url.includes('identities.json') ? {ok:true,json:async()=>({identities:[],nextCursor:''})} : url.includes('world-countries.svg') ? {ok: true, text: async () => '<svg/>'} :
+        {ok: true, json: async () => ({current:report,baseline:report})},
     AbortController, URLSearchParams, Date, Map, Number, Math, String, Error
 });
 vm.runInContext(source, context, {filename: 'dashboard-v2.js'});
@@ -70,11 +71,18 @@ assert.ok(rendered.includes('Unsuccessful candidates do not establish service ab
 assert.ok(rendered.includes('ASN does not establish hosting provider'));
 assert.ok(!rendered.includes('192.0.2.1'));
 assert.ok(shape.style.fill.startsWith('hsl('));
+for (const [page, expected] of Object.entries({discovery:'Discovery sources',p2p:'Protocol outcomes · stacked bars',apis:'Independent API candidate probes',statistics:'Evidence statistics',clients:'Execution-client evidence',geography:'Approximate endpoint geography',trends:'Inspection activity',events:'Changes over time'})) {
+    elements['visual-analytics'].dataset.page=page;
+    elements['refresh-measurement'].fire('click');
+    await new Promise(resolve=>setImmediate(resolve));
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.ok(text(elements['visual-analytics']).includes(expected), `functional page ${page} missing ${expected}`);
+}
 let releaseStale;
 context.fetch = () => new Promise(resolve => { releaseStale = resolve; });
 elements['measurement-scope'].fire('change');
 elements['clear-form'].fire('submit');
-releaseStale({ok: true, json: async () => report});
+releaseStale({ok: true, json: async () => ({current:report,baseline:report})});
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(elements['visual-analytics'].children.length, 0);
 console.log('Dashboard v2 DOM rendering: units, unknowns, overlap, map aggregate, stale Clear response PASS');

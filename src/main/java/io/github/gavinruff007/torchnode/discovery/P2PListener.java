@@ -30,8 +30,17 @@ public class P2PListener {
                                        ConcurrentHashMap<String, DiscoveredNode> discoveredNodesMap,
                                        ConcurrentHashMap<String, BondState> bondStates,
                                        java.util.function.BiConsumer<DiscoveredNode, String> observer) {
+        return startListening(socket, myNode, discoveredNodesMap, bondStates, observer, new Discv4EvidenceCapture(null));
+    }
+
+    public static Thread startListening(DatagramSocket socket, LocalNodeIdentity myNode,
+                                       ConcurrentHashMap<String, DiscoveredNode> discoveredNodesMap,
+                                       ConcurrentHashMap<String, BondState> bondStates,
+                                       java.util.function.BiConsumer<DiscoveredNode, String> observer,
+                                       Discv4EvidenceCapture evidence) {
         Thread listenerThread = new Thread(() -> {
-            byte[] buffer = new byte[2048];
+            // One extra byte detects oversized/truncated datagrams; the protocol maximum is 1280.
+            byte[] buffer = new byte[1281];
             System.out.println("Listener started. Waiting for Ethereum nodes to talk back...");
 
             while (!socket.isClosed()) {
@@ -41,13 +50,11 @@ public class P2PListener {
 
                     byte[] receivedData = Arrays.copyOf(packet.getData(), packet.getLength());
 
-                    if (receivedData.length < 98) {
-                        continue;
-                    }
-
-                    byte[] hash = Arrays.copyOfRange(receivedData, 0, 32);
-                    byte packetType = receivedData[97];
-                    byte[] rlpData = Arrays.copyOfRange(receivedData, 98, receivedData.length);
+                    var received = evidence.receive(receivedData,
+                            new java.net.InetSocketAddress(packet.getAddress(), packet.getPort()));
+                    if (received == null) continue;
+                    byte[] hash = received.packet().hash();
+                    int packetType = received.packet().type();
 
                     String sender = EndpointAddress.hostPort(packet.getAddress().getHostAddress(), packet.getPort());
 
@@ -66,7 +73,10 @@ public class P2PListener {
 
                     } else if (packetType == 0x04) {
                         System.out.println("[←] NEIGHBORS from " + sender);
-                        handleNeighbors(rlpData, discoveredNodesMap, observer, sender);
+                        for (var node : received.nodes()) {
+                            discoveredNodesMap.put(node.getKey(), node);
+                            observer.accept(node, sender);
+                        }
 
                     } else {
                         System.out.printf("[WARN] Unknown packet type: 0x%02x from %s%n", packetType, sender);
@@ -115,6 +125,7 @@ public class P2PListener {
         }
     }
 
+    /** Legacy payload adapter retained for compatibility tests. Network ingress uses verified capture above. */
     static void handleNeighbors(byte[] rlpData, ConcurrentHashMap<String, DiscoveredNode> discoveredNodesMap,
                                 java.util.function.BiConsumer<DiscoveredNode, String> observer, String sender) {
         try {

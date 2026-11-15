@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const source=readFileSync('src/main/resources/webapp/WEB-INF/views/layout.jsp','utf8').replace(/<%=[\s\S]*?%>/g,'VALUE').match(/<script[^>]*>([\s\S]*?)<\/script>/)[1];
+const classes=new Set(),attributes={},events={},storage=new Map();let focused=false;
+const button={setAttribute:(key,value)=>attributes[key]=value,focus:()=>focused=true};
+const context=vm.createContext({document:{body:{classList:{add:key=>classes.add(key),remove:key=>classes.delete(key),contains:key=>classes.has(key),toggle:key=>classes.has(key)?classes.delete(key):classes.add(key)}},getElementById:()=>button},innerWidth:1200,localStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,String(value))},addEventListener:(key,handler)=>events[key]=handler});
+vm.runInContext(source,context);
+assert.equal(attributes['aria-expanded'],true);
+button.onclick();assert.equal(attributes['aria-expanded'],false);assert.equal(storage.get('tn-collapsed'),'true');
+context.innerWidth=700;events.resize();assert.equal(attributes['aria-expanded'],false);
+button.onclick();assert.equal(attributes['aria-expanded'],true);assert.ok(classes.has('tn-open'));
+events.keydown({key:'Escape'});assert.equal(attributes['aria-expanded'],false);assert.ok(!classes.has('tn-open'));assert.ok(focused);
+console.log('Admin layout: desktop collapse, mobile menu, aria-expanded and Escape focus PASS');

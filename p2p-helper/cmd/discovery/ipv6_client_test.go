@@ -92,7 +92,7 @@ func TestIpv6AdapterRejectsUnsolicitedAndExcessiveResponses(t *testing.T) {
 						}
 					case "multi-packet":
 						// Different ciphertext nonces: both responses belong to the same request.
-						e = send(&v5wire.Nodes{ReqID: query.ReqID, RespCount: 2})
+						e = send(&v5wire.Nodes{ReqID: query.ReqID, RespCount: 2, Nodes: []*enr.Record{peer.Node().Record()}})
 						if e == nil {
 							e = send(&v5wire.Nodes{ReqID: query.ReqID, RespCount: 2})
 						}
@@ -103,7 +103,7 @@ func TestIpv6AdapterRejectsUnsolicitedAndExcessiveResponses(t *testing.T) {
 			}()
 			nodes, err := client.findnode(ctx, peer.Node(), []uint{0})
 			if mode == "multi-packet" {
-				if err != nil || len(nodes) != 0 {
+				if err != nil || len(nodes) != 1 {
 					t.Fatalf("multi-packet aggregation: %v", err)
 				}
 			} else if err == nil {

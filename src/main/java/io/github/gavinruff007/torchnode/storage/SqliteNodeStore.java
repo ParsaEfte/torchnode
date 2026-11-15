@@ -33,11 +33,24 @@ public class SqliteNodeStore implements NodeStore {
 
     /** Open an existing frozen schema without running migrations or allowing writes. */
     public SqliteNodeStore(String dbPath, boolean readOnly) throws SQLException {
+        this(dbPath,readOnly,6);
+    }
+    /** Package-local version ceiling permits representative pre-upgrade fixtures. */
+    SqliteNodeStore(String dbPath,boolean readOnly,int version) throws SQLException {
+        if(version!=5 && version!=6)throw new IllegalArgumentException("Unsupported fixture schema ceiling");
         connection = DriverManager.getConnection(readOnly
                 ? "jdbc:sqlite:" + java.nio.file.Path.of(dbPath).toAbsolutePath().toUri() + "?mode=ro"
                 : "jdbc:sqlite:" + dbPath);
         try { try(var statement=connection.createStatement()){statement.execute("PRAGMA foreign_keys=ON");}
-            if (!readOnly) initSchema();
+            if (!readOnly) {
+                // Refuse future schemas before any initialization DDL or historical writes.
+                try(var statement=connection.createStatement();var table=statement.executeQuery("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'")) {
+                    if(table.next())try(var check=connection.createStatement();var versions=check.executeQuery("SELECT COALESCE(MAX(version),0) FROM schema_migrations")) {
+                        if(versions.next() && versions.getInt(1)>version)throw new SQLException("Unsupported future observation schema");
+                    }
+                }
+            }
+            if (!readOnly) {initSchema();if(version>=6)DiscoveryEvidenceSchema.migrate(connection);}
             else { historicalSchemaReady=true; changeSchemaReady=true; }
         }
         catch (SQLException | RuntimeException e) {

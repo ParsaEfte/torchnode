@@ -207,6 +207,7 @@ public final class NetworkAnalytics {
                     " GROUP BY c.derivation_version,c.change_type ORDER BY c.derivation_version,c.change_type",scope);
             metrics.add(metric("change-activity","change events","persisted derived events in window",total(changes),0,
                     "Buckets retain derivation rule version; first observed is not a transition",changes));
+            measureActivity(db,scope,metrics);
             long untimedRuns=scalar(db,"SELECT COUNT(*) FROM inspection_runs WHERE started_at IS NULL");
             long untimedAttempts=scalar(db,"SELECT COUNT(*) FROM inspection_runs r JOIN inspection_evidence v ON v.hash=r.evidence_hash "+
                     "JOIN json_each(v.evidence_json,'$.endpointAttempts') a LEFT JOIN json_each(r.timing_json,'$.endpointAttemptTimes') t ON t.key=a.key WHERE t.value IS NULL");
@@ -215,6 +216,48 @@ public final class NetworkAnalytics {
             return new Report(scope,Instant.now(),"Among identities observed by TorchNode under this measurement scope; this is an observer sample, not an Ethereum population estimate",
                     untimedRuns,untimedAttempts,untimedRpc,metrics);
         }
+    }
+
+    /** Bounded identity drill-down over the same evidence clocks as the report. */
+    public List<String> observedIdentities(Scope scope,String domain,String after) throws SQLException {
+        if(!List.of("all","discovery","inspection","enr","changes").contains(domain))throw new IllegalArgumentException("Invalid evidence domain");
+        if(after!=null && !after.matches("[0-9a-f]{128}"))throw new IllegalArgumentException("Invalid identity cursor");
+        var parts=new ArrayList<String>();
+        for(String[] source:new String[][]{{"discovery","discovery_observations","observed_at"},{"inspection","inspection_runs","started_at"},{"enr","enr_observations","observed_at"},{"changes","change_events","current_observed_at"}}) {
+            if(domain.equals("all") || domain.equals(source[0]))parts.add("SELECT node_id FROM "+source[1]+" WHERE "+bound(source[2]));
+        }
+        try(var db=readOnlyConnection();var q=db.prepareStatement("SELECT DISTINCT node_id FROM ("+String.join(" UNION ",parts)+") WHERE node_id>? ORDER BY node_id LIMIT 50")) {
+            int index=1;
+            for(int i=0;i<parts.size();i++){q.setString(index++,key(scope.startInclusive()));q.setString(index++,key(scope.endExclusive()));}
+            q.setString(index,after==null?"":after);q.setQueryTimeout(15);
+            var result=new ArrayList<String>();try(var r=q.executeQuery()){while(r.next())result.add(r.getString(1));}return result;
+        }
+    }
+
+    /** Calendar buckets contain measured occurrences only, never interpolated samples. */
+    private static void measureActivity(Connection db,Scope scope,List<Metric> metrics) throws SQLException {
+        int width=Duration.between(scope.startInclusive(),scope.endExclusive()).compareTo(Duration.ofDays(2))<=0?13:10;
+        String d=bound("observed_at"),r=bound("started_at");
+        for(String[] series:new String[][]{
+                {"discovery-events-time","discovery_observations","observed_at","COUNT(*)","discovery receipts"},
+                {"discovery-identities-time","discovery_observations","observed_at","COUNT(DISTINCT node_id)","distinct identities per bucket"},
+                {"inspection-runs-time","inspection_runs","started_at","COUNT(*)","inspection runs"},
+                {"changes-time","change_events","current_observed_at","COUNT(*)","derived events"}}) {
+            var values=buckets(db,"SELECT substr("+series[2]+",1,"+width+"),"+series[3]+" FROM "+series[1]+" WHERE "+bound(series[2])+" GROUP BY 1 ORDER BY 1",scope);
+            metrics.add(metric(series[0],series[4],"sum of returned bucket counts; identities can repeat across buckets",total(values),0,
+                    "UTC calendar "+(width==13?"hour":"day")+" buckets clipped to [start,end); missing buckets mean zero recorded occurrences, not node absence",values));
+        }
+        var repeats=buckets(db,"SELECT CASE WHEN n=1 THEN 'one receipt' ELSE 'repeated receipts' END,COUNT(*) FROM (SELECT node_id,COUNT(*) n FROM discovery_observations WHERE "+d+" GROUP BY node_id) GROUP BY 1 ORDER BY 1",scope);
+        metrics.add(metric("repeat-discovery","canonical identities","identities with timestamped discovery receipts",total(repeats),0,"Repeat sampling does not establish continuous presence or uptime",repeats));
+        var endpoints=buckets(db,"SELECT address_family,COUNT(*) FROM (SELECT DISTINCT address_family,address,transport,purpose,port FROM discovery_endpoint_index WHERE "+d+") GROUP BY 1 ORDER BY 1",scope);
+        metrics.add(metric("distinct-endpoints","typed endpoints","distinct address/transport/purpose/port tuples in window",total(endpoints),0,"Endpoints are not identities; the same address can occur with different ports or purposes",endpoints));
+        String attempts=" FROM inspection_runs r JOIN inspection_evidence v ON v.hash=r.evidence_hash JOIN json_each(v.evidence_json,'$.endpointAttempts') a JOIN json_each(r.timing_json,'$.endpointAttemptTimes') t ON t.key=a.key JOIN json_each(a.value,'$.diagnostics') s WHERE "+bound("t.value");
+        var outcomes=buckets(db,"SELECT substr(t.value,1,"+width+")||' / '||COALESCE(json_extract(s.value,'$.state'),'UNKNOWN'),COUNT(*)"+attempts+" AND json_extract(s.value,'$.name')='P2P TCP' GROUP BY 1 ORDER BY 1",scope);
+        metrics.add(metric("tcp-outcomes-time","endpoint TCP stage records","timestamped TCP stage records including NOT_TESTED",total(outcomes),0,"Raw recorded states retain NOT_TESTED and UNKNOWN; this is TCP evidence only",outcomes));
+        var families=buckets(db,"SELECT COALESCE(json_extract(a.value,'$.addressFamily'),'UNKNOWN')||' / '||COALESCE(json_extract(s.value,'$.state'),'UNKNOWN'),COUNT(*)"+attempts+" AND json_extract(s.value,'$.name')='P2P TCP' GROUP BY 1 ORDER BY 1",scope);
+        metrics.add(metric("family-tcp-outcomes","endpoint TCP stage records","timestamped TCP stage records by recorded family",total(families),0,"Compare PASS against actual tested states; NOT_TESTED is not failure",families));
+        var health=buckets(db,"SELECT trigger,COUNT(*) FROM inspection_runs WHERE "+r+" GROUP BY trigger ORDER BY trigger",scope);
+        metrics.add(metric("inspection-triggers","inspection runs","timestamped inspection runs",total(health),0,"Recorded trigger provenance; no scan throughput estimate without scan lifecycle records",health));
     }
 
     private static void measureInspections(Connection db,Scope scope,List<Metric> metrics,long identities) throws SQLException {
@@ -287,6 +330,13 @@ public final class NetworkAnalytics {
             var values=buckets(db,"SELECT "+state+",COUNT(*) "+api.formatted(domain,domain)+" GROUP BY 1 ORDER BY 1",scope);
             metrics.add(metric(domain+"-attempts","candidate endpoint attempts","actual timestamped candidate probes",total(values),0,
                     "Failed candidate probe does not establish service absence",values));
+            String latency="json_extract(a.value,'$.responseMs')";
+            String validLatency="json_type(a.value,'$.responseMs') IN ('integer','real') AND "+latency+">=0";
+            String successful=" AND json_extract(a.value,'$."+reachable+"')=1";
+            var latencyValues=buckets(db,"SELECT CASE WHEN "+latency+"<50 THEN '0–49 ms' WHEN "+latency+"<200 THEN '50–199 ms' WHEN "+latency+"<1000 THEN '200–999 ms' ELSE '1000+ ms' END,COUNT(*) "+api.formatted(domain,domain)+successful+" AND "+validLatency+" GROUP BY 1 ORDER BY MIN("+latency+")",scope);
+            long responding=scalar(db,"SELECT COUNT(*) "+api.formatted(domain,domain)+successful,scope);
+            metrics.add(metric(domain+"-response-latency","responding candidate probe samples","timestamped responding candidates; one stored first usable method duration per candidate",responding,Math.max(0,responding-total(latencyValues)),
+                    "Stored responseMs only; first usable response timing, not whole probe duration, per-method latency, an SLA or P2P latency",latencyValues));
             long attemptedIdentities=scalar(db,"SELECT COUNT(DISTINCT r.node_id) "+api.formatted(domain,domain),scope);
             metrics.add(metric(domain+"-coverage","canonical identities","observed identities in window",identities,
                     Math.max(0,identities-attemptedIdentities),"At least one timestamped candidate probe",List.of(new Bucket("attempted",attemptedIdentities))));

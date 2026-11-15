@@ -58,11 +58,12 @@ func (c *endpointClient) endpoint(n *enode.Node) (netip.AddrPort, bool) {
 }
 
 type endpointClient struct {
-	ipv6  bool
-	sink  *sink
-	local *enode.LocalNode
-	conn  *guardedConn
-	codec *v5wire.Codec
+	ipv6      bool
+	sink      *sink
+	local     *enode.LocalNode
+	conn      *guardedConn
+	codec     *v5wire.Codec
+	contextID string
 }
 
 func newIPv4Client(ln *enode.LocalNode, key *ecdsa.PrivateKey) (*endpointClient, error) {
@@ -77,10 +78,16 @@ func newFamilyClient(ln *enode.LocalNode, key *ecdsa.PrivateKey, ipv6 bool) (*en
 	if err != nil {
 		return nil, err
 	}
-	return &endpointClient{ipv6, nil, ln, &guardedConn{UDPConn: conn, replay: make(map[[32]byte]int64)}, v5wire.NewCodec(ln, key, mclock.System{}, nil)}, nil
+	return &endpointClient{ipv6: ipv6, local: ln, conn: &guardedConn{UDPConn: conn, replay: make(map[[32]byte]int64)}, codec: v5wire.NewCodec(ln, key, mclock.System{}, nil), contextID: captureToken()}, nil
 }
 func (c *endpointClient) close() { c.conn.Close() }
-func (c *endpointClient) request(ctx context.Context, n *enode.Node, p v5wire.Packet, wanted byte) ([]v5wire.Packet, error) {
+func (c *endpointClient) request(ctx context.Context, n *enode.Node, p v5wire.Packet, wanted byte) (replies []v5wire.Packet, requestError error) {
+	trace := c.beginTrace(n, p)
+	defer func() { c.finishTrace(trace, requestError) }()
+	seenPackets := make(map[[32]byte]bool)
+	if len(p.RequestID()) == 0 || len(p.RequestID()) > 8 {
+		return nil, errors.New("invalid request ID")
+	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -98,7 +105,6 @@ func (c *endpointClient) request(ctx context.Context, n *enode.Node, p v5wire.Pa
 	deadline := time.Now().Add(700 * time.Millisecond)
 	challengeSeen := false
 	total := -1
-	var replies []v5wire.Packet
 	var buf [1280]byte
 	for time.Now().Before(deadline) {
 		if ctx.Err() != nil {
@@ -113,10 +119,12 @@ func (c *endpointClient) request(ctx context.Context, n *enode.Node, p v5wire.Pa
 			return replies, err
 		}
 		if from != addr {
+			trace.packet(buf[:size], enode.ID{}, nil, false, "UNEXPECTED_ENDPOINT")
 			continue
 		}
 		id, _, packet, err := c.codec.Decode(buf[:size], addr.String())
 		if err != nil {
+			trace.packet(buf[:size], enode.ID{}, nil, false, "DECODE_FAILED")
 			continue
 		}
 		if challenge, ok := packet.(*v5wire.Whoareyou); ok {
@@ -139,12 +147,16 @@ func (c *endpointClient) request(ctx context.Context, n *enode.Node, p v5wire.Pa
 			continue
 		}
 		if id != n.ID() {
+			trace.packet(buf[:size], id, nil, false, "RESPONDER_MISMATCH")
 			continue
 		}
 		if unknown, ok := packet.(*v5wire.Unknown); ok {
+			trace.packet(buf[:size], id, nil, false, "UNAUTHENTICATED_MESSAGE")
 			// Reciprocal handshake is allowed, but only this authenticated request target/source.
 			challenge := &v5wire.Whoareyou{Nonce: unknown.Nonce, Node: n, RecordSeq: n.Seq()}
-			rand.Read(challenge.IDNonce[:])
+			if _, err = rand.Read(challenge.IDNonce[:]); err != nil {
+				return replies, err
+			}
 			wire, _, err = c.codec.Encode(n.ID(), addr.String(), challenge, nil)
 			if err == nil {
 				c.conn.WriteToUDPAddrPort(wire, addr)
@@ -174,9 +186,22 @@ func (c *endpointClient) request(ctx context.Context, n *enode.Node, p v5wire.Pa
 			continue
 		}
 		if packet.Kind() != wanted || !equalID(packet.RequestID(), p.RequestID()) {
+			if nodes, ok := packet.(*v5wire.Nodes); ok {
+				trace.packet(buf[:size], id, nodes, true, "REQUEST_ID_MISMATCH")
+			}
 			continue
 		}
 		if nodes, ok := packet.(*v5wire.Nodes); ok {
+			fingerprint := nodesFingerprint(nodes)
+			if seenPackets[fingerprint] {
+				trace.packet(buf[:size], id, nodes, true, "DUPLICATE_NODES")
+				continue
+			}
+			seenPackets[fingerprint] = true
+			trace.packet(buf[:size], id, nodes, true, "MATCHED_NODES")
+			if len(nodes.Nodes) > 16 {
+				return replies, errors.New("excessive ENRs in NODES packet")
+			}
 			if nodes.RespCount == 0 || nodes.RespCount > 5 {
 				return replies, errors.New("excessive NODES total")
 			}
@@ -210,7 +235,13 @@ func equalID(a, b []byte) bool {
 	}
 	return true
 }
-func requestID() []byte { id := make([]byte, 8); rand.Read(id); return id }
+func requestID() []byte {
+	id := make([]byte, 8)
+	if _, err := rand.Read(id); err != nil {
+		panic("discovery entropy unavailable")
+	}
+	return id
+}
 func (c *endpointClient) ping(ctx context.Context, n *enode.Node, seq uint64) error {
 	replies, err := c.request(ctx, n, &v5wire.Ping{ReqID: requestID(), ENRSeq: seq}, v5wire.PongMsg)
 	if err != nil {
@@ -240,7 +271,10 @@ func (c *endpointClient) findnode(ctx context.Context, n *enode.Node, distances 
 		for _, r := range reply.(*v5wire.Nodes).Nodes {
 			candidate, validation := enode.New(enode.ValidSchemes, r)
 			if validation != nil {
-				return result, errors.New("invalid ENR in NODES")
+				if err == nil {
+					err = errors.New("invalid ENR in NODES")
+				}
+				continue
 			}
 			if seen[candidate.ID()] || !allowed[uint(enode.LogDist(n.ID(), candidate.ID()))] {
 				continue

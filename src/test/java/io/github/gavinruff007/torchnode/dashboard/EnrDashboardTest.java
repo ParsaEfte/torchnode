@@ -27,16 +27,16 @@ class EnrDashboardTest {
                 var public6=new io.github.gavinruff007.torchnode.model.NodeRecord("2606:4700::1111",30301,0,"ef".repeat(64));public6.setDiscoverySource("discv5");store.save(public6);
                 try(var provider=new io.github.gavinruff007.torchnode.enrichment.OfflineGeoIpProvider(null,null)){store.saveNetworkEnrichment(provider.lookup(public6.getIp()));}
             }
-            var server=new DashboardServer(port,path);server.start();
+            var server=new DashboardServer(port,path,"127.0.0.1",false);server.start();
             try {
                 var cookies=new CookieManager();cookies.setCookiePolicy(CookiePolicy.ACCEPT_ALL);
-                var http=HttpClient.newBuilder().cookieHandler(cookies).followRedirects(HttpClient.Redirect.NORMAL).build();
+                var http=AuthTestSupport.client(path,port);
                 String root="http://127.0.0.1:"+port;
                 String dashboard=http.send(HttpRequest.newBuilder(URI.create(root+"/")).build(),HttpResponse.BodyHandlers.ofString()).body();
                 assertTrue(dashboard.contains("[2001:db8::42]:30301"));
                 var token=java.util.regex.Pattern.compile("name=\"csrf\" value=\"([^\"]+)\"").matcher(dashboard);assertTrue(token.find());
                 String csrf=token.group(1);
-                var page=http.send(HttpRequest.newBuilder(URI.create(root+"/node?key="+URLEncoder.encode(node.getKey(),java.nio.charset.StandardCharsets.UTF_8))).build(),HttpResponse.BodyHandlers.ofString());
+                var page=AuthTestSupport.post(http,port,"/inspection/start","csrf="+csrf+"&key="+URLEncoder.encode(node.getKey(),java.nio.charset.StandardCharsets.UTF_8));
                 assertEquals(200,page.statusCode());assertTrue(page.body().contains("Advertised IPv6"));assertTrue(page.body().contains("Endpoint Analysis"));assertTrue(page.body().contains("Network Location / Infrastructure"));
                 var match=java.util.regex.Pattern.compile("const inspectionId = '([^']+)' ".trim()).matcher(page.body());assertTrue(match.find());
                 String id=match.group(1);var json=new ObjectMapper();com.fasterxml.jackson.databind.JsonNode snapshot=null;
@@ -69,7 +69,7 @@ class EnrDashboardTest {
 
                 var request=HttpRequest.newBuilder(URI.create(root+"/data/clear")).header("Content-Type","application/x-www-form-urlencoded")
                         .POST(HttpRequest.BodyPublishers.ofString("csrf="+URLEncoder.encode(csrf,java.nio.charset.StandardCharsets.UTF_8))).build();
-                assertEquals(200,http.send(request,HttpResponse.BodyHandlers.ofString()).statusCode());
+                assertEquals(302,http.send(request,HttpResponse.BodyHandlers.ofString()).statusCode());
                 try(var store=new SqliteNodeStore(path)){assertEquals(0,store.count());assertTrue(store.findEnrEvidence(node.identity()).isEmpty());assertTrue(store.findObservations(node.identity()).isEmpty());}
             } finally {server.stop();}
         }

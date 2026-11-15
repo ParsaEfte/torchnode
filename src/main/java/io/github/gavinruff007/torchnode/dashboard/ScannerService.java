@@ -14,26 +14,34 @@ public class ScannerService {
     };
 
     private final String databasePath;
-    private ScanDaemon daemon;
+    private volatile ScanDaemon daemon;
     private DatagramSocket socket;
+    private ObserverInstance.Run discoveryRun;
+    private Discv4DiscoveryProvider discv4Provider;
+    private Discv5DiscoveryProvider discv5Provider;
 
     public ScannerService(String databasePath) {
         this.databasePath = databasePath;
     }
 
     public synchronized void start() throws Exception {
+        if ("true".equals(System.getenv("TORCHNODE_COLLECTION_DISABLED")))
+            throw new IllegalStateException("Collection disabled by operator configuration");
         if (isRunning()) {
             return;
         }
+        discv4Provider = null; discv5Provider=null;
         LocalNodeIdentity identity = new LocalNodeIdentity();
+        discoveryRun = ObserverInstance.open(ObserverInstance.configuredPath(databasePath)).beginRun(identity.getNodeId());
         java.util.List<DiscoveryProvider> providers = new java.util.ArrayList<>();
         try {
             socket = new DatagramSocket(30303);
-            providers.add(new Discv4DiscoveryProvider(identity, socket, BOOTSTRAP_NODES));
+            discv4Provider = new Discv4DiscoveryProvider(identity, socket, BOOTSTRAP_NODES, discoveryRun);
+            providers.add(discv4Provider);
         } catch (java.net.SocketException e) {
             System.err.println("[Discovery] discv4 unavailable: " + e.getMessage()); socket = null;
         }
-        try { providers.add(new Discv5DiscoveryProvider(identity)); }
+        try { discv5Provider=new Discv5DiscoveryProvider(identity,discoveryRun); providers.add(discv5Provider); }
         catch (java.io.IOException e) { System.err.println("[Discovery] discv5 configuration unavailable: " + e.getMessage()); }
         if (providers.isEmpty()) throw new java.io.IOException("No discovery provider could be configured");
         daemon = new ScanDaemon(databasePath);
@@ -67,7 +75,14 @@ public class ScannerService {
         if (interrupted) Thread.currentThread().interrupt();
     }
 
-    public synchronized boolean isRunning() {
-        return daemon != null && daemon.isRunning();
+    public boolean isRunning() {
+        ScanDaemon current=daemon;return current != null && current.isRunning();
+    }
+
+    /** Public installation/run context, never discovery private-key material. */
+    public synchronized ObserverInstance.Run discoveryRun() { return discoveryRun; }
+    public synchronized Discv5EvidenceCapture.Snapshot discv5Evidence() {return discv5Provider==null?null:discv5Provider.relationshipEvidence();}
+    public synchronized Discv4EvidenceCapture.Snapshot discv4Evidence() {
+        return discv4Provider == null ? null : discv4Provider.relationshipEvidence();
     }
 }

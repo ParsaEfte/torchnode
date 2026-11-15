@@ -6,13 +6,21 @@
 
     <groupId>io.github.gavinruff007</groupId>
     <artifactId>torchnode</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0.0</version>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.build.outputTimestamp>2026-11-13T00:00:00Z</project.build.outputTimestamp>
+        <jsp.precompile.skip>false</jsp.precompile.skip>
+        <jackson.version>2.18.11</jackson.version>
     </properties>
+
+    <dependencyManagement><dependencies><dependency>
+        <groupId>com.fasterxml.jackson</groupId><artifactId>jackson-bom</artifactId>
+        <version>${jackson.version}</version><type>pom</type><scope>import</scope>
+    </dependency></dependencies></dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -22,14 +30,15 @@
         </dependency>
         <dependency>
             <groupId>org.bouncycastle</groupId>
-            <artifactId>bcprov-jdk15on</artifactId>
-            <version>1.70</version>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>1.86</version>
         </dependency>
 
         <dependency>
             <groupId>org.web3j</groupId>
             <artifactId>core</artifactId>
             <version>4.9.4</version>
+            <exclusions><exclusion><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk15on</artifactId></exclusion></exclusions>
         </dependency>
 
         <dependency>
@@ -41,7 +50,7 @@
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
-            <version>3.46.0.0</version>
+            <version>3.54.1.0</version>
         </dependency>
 
         <dependency>
@@ -53,7 +62,7 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.17.1</version>
+            <version>${jackson.version}</version>
         </dependency>
 
         <!-- Add this to <dependencies> section -->
@@ -66,7 +75,7 @@
         <dependency>
             <groupId>org.apache.tomcat.embed</groupId>
             <artifactId>tomcat-embed-jasper</artifactId>
-            <version>10.1.28</version>
+            <version>10.1.61</version>
         </dependency>
 
         <dependency>
@@ -80,6 +89,8 @@
 
     <build>
         <plugins>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-resources-plugin</artifactId><version>3.3.1</version></plugin>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId><version>3.4.2</version></plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -118,6 +129,22 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.0</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><version>3.1.0</version>
+                <dependencies><dependency><groupId>org.apache.ant</groupId><artifactId>ant</artifactId><version>1.10.13</version></dependency></dependencies>
+                <executions><execution><id>precompile-release-views</id><phase>package</phase><goals><goal>run</goal></goals>
+                    <configuration><skip>${jsp.precompile.skip}</skip><target>
+                        <property name="build.tools.classpath" refid="maven.plugin.classpath"/>
+                        <delete dir="${project.build.directory}/precompiled"/>
+                        <ant antfile="${project.basedir}/tools/precompile-jsp.xml" target="package">
+                            <property name="app.jar" value="${project.build.directory}/${project.build.finalName}-jar-with-dependencies.jar"/>
+                            <property name="out.dir" value="${project.build.directory}/precompiled"/>
+                        </ant>
+                        <copy file="${project.build.directory}/precompiled/torchnode.jar" tofile="${project.build.directory}/${project.build.finalName}-jar-with-dependencies.jar" overwrite="true"/>
+                    </target></configuration>
+                </execution></executions>
             </plugin>
         </plugins>
     </build>

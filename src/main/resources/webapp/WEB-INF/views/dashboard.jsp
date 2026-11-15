@@ -1,3 +1,4 @@
+<%@ page pageEncoding="UTF-8" %>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 <%@ page import="io.github.gavinruff007.torchnode.model.NodeRecord" %>
 <%@ page import="io.github.gavinruff007.torchnode.model.NodeType" %>
@@ -41,8 +42,8 @@
     int pageSize = (Integer) request.getAttribute("pageSize");
     int totalPages = (Integer) request.getAttribute("totalPages");
     int totalResults = (Integer) request.getAttribute("totalResults");
-    DateTimeFormatter timeFormat = DateTimeFormatter.ofPattern("MMM d, HH:mm:ss")
-            .withZone(ZoneId.systemDefault());
+    DateTimeFormatter timeFormat = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss 'UTC'")
+            .withZone(ZoneId.of("UTC"));
 %>
 <!doctype html>
 <html lang="en">
@@ -148,8 +149,10 @@
         @media (max-width:720px) { .visual-grid,.viz-columns { grid-template-columns:1fr; }.viz-panel:first-child,.viz-panel:nth-child(2),.viz-panel:nth-child(5) { grid-column:auto; }.funnel-row { grid-template-columns:1fr auto; }.funnel-row small { grid-column:1/-1; text-align:left; }.bar-row { grid-template-columns:minmax(65px,1fr) minmax(40px,1fr) auto; } }
         @media (max-width:430px) { .overview-grid { grid-template-columns:1fr; }.stats { grid-template-columns:1fr 1fr; }.scope-controls { width:100%; }.scope-controls select { flex:1; } }
     </style>
+<link rel="stylesheet" href="/assets/observatory.css">
 </head>
 <body>
+<%@ include file="layout.jsp" %>
 <main class="shell">
     <header>
         <div><div class="eyebrow">Ethereum network intelligence</div><h1>TorchNode Observatory</h1></div>
@@ -158,11 +161,11 @@
             <a class="button secondary" href="/reports/network">Network Report</a>
             <div class="live <%= scannerRunning ? "good" : "muted" %>"><span class="pulse"></span><%= scannerRunning ? "Scanner running" : "Scanner stopped" %></div>
             <a class="button secondary" href="/api/v1/help">API &amp; Exports</a>
-            <form class="action-form" method="post" action="/scanner/<%= scannerRunning ? "stop" : "start" %>">
+            <% if(Boolean.TRUE.equals(request.getAttribute("isAdmin"))){ %><form class="action-form" method="post" action="/scanner/<%= scannerRunning ? "stop" : "start" %>">
                 <input type="hidden" name="csrf" value="<%= h(csrfToken) %>">
                 <button class="<%= scannerRunning ? "danger" : "" %>" type="submit"><%= scannerRunning ? "Stop scan" : "Start scan" %></button>
             </form>
-            <button class="danger" type="button" id="open-clear">Clear All Data</button>
+            <button class="danger" type="button" id="open-clear">Clear All Data</button><% } %>
         </div>
     </header>
 
@@ -181,7 +184,7 @@
     <% if (message != null) { %><div class="notice"><%= h(message) %></div><% } %>
     <% if (error != null) { %><div class="notice error"><%= h(error) %></div><% } %>
 
-    <section class="scope-panel" aria-labelledby="scope-title">
+    <% if(!"/explorer".equals(request.getServletPath())){ %><section class="scope-panel" aria-labelledby="scope-title">
         <div><h2 id="scope-title">Network measurements</h2><p>Historical observations from this scanner. Window charts are independent of the latest-state table and its filters.</p></div>
         <div class="scope-controls"><label for="measurement-scope">Measurement window</label>
             <select id="measurement-scope"><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option></select>
@@ -190,9 +193,9 @@
         </div>
     </section>
     <p id="measurement-status" role="status" aria-live="polite">Loading bounded observations…</p>
-    <div id="visual-analytics" class="visual-grid" aria-label="Network observation visualizations"></div>
+    <div id="visual-analytics" data-admin="<%= Boolean.TRUE.equals(request.getAttribute("isAdmin")) %>" class="visual-grid" aria-label="Network observation visualizations"></div>
 
-    <h2>Latest endpoint projections</h2>
+    <% } %><h2 id="nodes">Latest endpoint projections</h2>
     <p class="latest-caption">This snapshot may contain several endpoint rows per cryptographic identity. It is separate from the historical charts above.</p>
     <section class="stats" aria-label="Latest projection summary">
         <div class="card"><div class="label">Latest identities</div><div class="value"><%= request.getAttribute("totalNodes") %></div></div>
@@ -258,10 +261,10 @@
         </div>
     </section>
 </main>
-<script>
+<script nonce="<%= request.getAttribute("cspNonce") %>">
 const filterForm = document.getElementById('filters');
 const clearDialog = document.getElementById('clear-dialog');
-document.getElementById('open-clear').addEventListener('click', () => clearDialog.showModal());
+document.getElementById('open-clear')?.addEventListener('click', () => clearDialog.showModal());
 document.getElementById('cancel-clear').addEventListener('click', () => clearDialog.close());
 function pending() {
     document.body.classList.add('pending');
@@ -311,6 +314,6 @@ setInterval(() => {
     pending(); setTimeout(() => location.reload(), 80);
 }, 30000);
 </script>
-<script src="/assets/dashboard-v2.js" defer></script>
+<script nonce="<%= request.getAttribute("cspNonce") %>" src="/assets/dashboard-v2.js" defer></script>
 </body>
 </html>

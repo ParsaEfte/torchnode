@@ -1,0 +1,44 @@
+[
+  {
+    "file": "third-party/upstream/jnr-posix/LICENSE.txt",
+    "archive": "jnr-posix-source.tar.gz",
+    "archiveSha256": "eef3aa5688fcae7af9021799dd320786955dc8eba61dde4fe4fbf848d5f50803",
+    "sha256": "c3f24d9cc653b5afece634ab7597fb70663c772fe42142465f6014441149fe9e"
+  },
+  {
+    "file": "third-party/upstream/ecj/LICENSE",
+    "archive": "ecj-project-source.tar.gz",
+    "archiveSha256": "094fcc84984fccee2bb80cef469f6cc58170a33a1b9170206ed457672bd2fac6",
+    "sha256": "0becf16567beb77fa252b7664631dd177c8f9a1889e48995b45379c7130e5303"
+  },
+  {
+    "file": "third-party/upstream/ecj/NOTICE",
+    "archive": "ecj-project-source.tar.gz",
+    "archiveSha256": "094fcc84984fccee2bb80cef469f6cc58170a33a1b9170206ed457672bd2fac6",
+    "sha256": "2f01e5d3bebde62fb2adf120d9abd15d8024be66d9e17805e84ed115394dd352"
+  },
+  {
+    "file": "third-party/upstream/lanterna/License.txt",
+    "archive": "lanterna-project-source.tar.gz",
+    "archiveSha256": "123341702aa2ce7510481e13a7570bd622e66b0dd445af6898d550047dd04d92",
+    "sha256": "ea8af5e789cb2d4e9b10bce3874982ade163b749b6bfbdb32e2df21c4d106de1"
+  },
+  {
+    "file": "third-party/upstream/lanterna/licenseheader.txt",
+    "archive": "lanterna-project-source.tar.gz",
+    "archiveSha256": "123341702aa2ce7510481e13a7570bd622e66b0dd445af6898d550047dd04d92",
+    "sha256": "3eaf1774afdcb0b932177e412038180d798878717f6493ec5baa2692d9480a16"
+  },
+  {
+    "file": "third-party/upstream/jffi/LICENSE",
+    "archive": "jffi-native-source.tar.gz",
+    "archiveSha256": "dca22a2d72eae96a3dd5ad15520ef7bbc04cd7c2a443e08e3ac457c85e4b3311",
+    "sha256": "56ee5386978dbcd08f9c257c349f3a6a9652a81a846880305fc4ce6f748aa70c"
+  },
+  {
+    "file": "third-party/upstream/jffi/jni/libffi/LICENSE",
+    "archive": "jffi-native-source.tar.gz",
+    "archiveSha256": "dca22a2d72eae96a3dd5ad15520ef7bbc04cd7c2a443e08e3ac457c85e4b3311",
+    "sha256": "25d56871423a870487edee68000ef66b1a7ec44a7ab84838ceeb3ce07f734b74"
+  }
+]

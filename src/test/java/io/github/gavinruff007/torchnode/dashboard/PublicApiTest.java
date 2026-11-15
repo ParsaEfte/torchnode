@@ -74,9 +74,9 @@ class PublicApiTest {
             try(var rows=query.executeQuery("SELECT COUNT(*) FROM inspection_evidence")) {assertTrue(rows.next());assertEquals(1,rows.getInt(1));}
         }
         int port;try(var socket=new ServerSocket(0)){port=socket.getLocalPort();}
-        var server=new DashboardServer(port,db);server.start();
+        var server=new DashboardServer(port,db,"127.0.0.1",false);server.start();
         try {
-            var client=HttpClient.newHttpClient();String base="http://127.0.0.1:"+port+"/api/v1";
+            var client=AuthTestSupport.client(db,port);String base="http://127.0.0.1:"+port+"/api/v1";
             assertEquals("v1",JSON.readTree(get(client,base).body()).path("apiVersion").asText());
             assertEquals("no-store",get(client,base).headers().firstValue("Cache-Control").orElseThrow());
             var first=JSON.readTree(get(client,base+"/identities?limit=1").body());

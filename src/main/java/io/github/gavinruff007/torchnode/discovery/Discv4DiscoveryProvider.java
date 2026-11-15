@@ -20,16 +20,29 @@ public final class Discv4DiscoveryProvider implements DiscoveryProvider {
     private final Queue<DiscoveryObservation> observations = new ConcurrentLinkedQueue<>();
     private volatile boolean running;
     private Thread listener;
+    private final Discv4EvidenceCapture relationshipEvidence;
+    private final ObserverInstance.Run run;
+    private final String evidenceStreamId=UUID.randomUUID().toString();
 
     public Discv4DiscoveryProvider(LocalNodeIdentity myNode, DatagramSocket socket, String[] bootstrapNodes) {
+        this(myNode, socket, bootstrapNodes, null);
+    }
+    public Discv4DiscoveryProvider(LocalNodeIdentity myNode, DatagramSocket socket, String[] bootstrapNodes,
+                                   ObserverInstance.Run run) {
+        if (run != null && !myNode.getNodeId().equals(run.localDiscoveryIdentity()))
+            throw new IllegalArgumentException("Observer run must refer to the actual local discovery identity");
+        this.run=run;
         this.myNode = myNode;
         this.socket = socket;
         this.bootstrapNodes = bootstrapNodes.clone();
+        this.relationshipEvidence = new Discv4EvidenceCapture(run);
     }
+    public Discv4EvidenceCapture.Snapshot relationshipEvidence() { return relationshipEvidence.snapshot(); }
+    @Override public void evidenceBatches(Consumer<DiscoveryEvidenceBatch> consumer){DiscoveryEvidenceBatch.v4(run,evidenceStreamId,relationshipEvidence.snapshot()).forEach(consumer);}
     @Override public String protocol() { return "discv4"; }
     @Override public void start() throws Exception {
         running = true;
-        listener = P2PListener.startListening(socket, myNode, discoveredNodes, bondStates, this::observe);
+        listener = P2PListener.startListening(socket, myNode, discoveredNodes, bondStates, this::observe, relationshipEvidence);
 
         for (String bootstrap : bootstrapNodes) {
             var endpoint = EndpointAddress.parseHostPort(bootstrap);
@@ -59,7 +72,7 @@ public final class Discv4DiscoveryProvider implements DiscoveryProvider {
             if (state != null && state.isFullyBonded()) {
                 System.out.println("[ScanDaemon] Sending FIND_NODE to bootstrap: " + bootstrap);
                 byte[] publicKey = Numeric.hexStringToByteArray(myNode.getNodeId());
-                FindNodeSender.sendFindNode(myNode, ip, port, socket, publicKey);
+                FindNodeSender.sendFindNode(myNode, ip, port, socket, publicKey, relationshipEvidence, null);
             }
         }
 
@@ -112,7 +125,7 @@ public final class Discv4DiscoveryProvider implements DiscoveryProvider {
                 if (state != null && state.isFullyBonded() && !queriedNodes.contains(key)) {
                     System.out.println("[Crawl] Sending FIND_NODE to: " + key);
                     byte[] publicKey = Numeric.hexStringToByteArray(myNode.getNodeId());
-                    FindNodeSender.sendFindNode(myNode, node.getIp(), node.getUdpPort(), socket, publicKey);
+                    FindNodeSender.sendFindNode(myNode, node.getIp(), node.getUdpPort(), socket, publicKey, relationshipEvidence, node.nodeIdHex);
                     queriedNodes.add(key);
                 }
 

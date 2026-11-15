@@ -1,0 +1,12 @@
+// Package bloomfilter is face-meltingly fast, thread-safe,
+// marshalable, unionable, probability- and
+// optimal-size-calculating Bloom filter in go
+//
+// https://github.com/steakknife/bloomfilter
+//
+// Copyright © 2014, 2015, 2018 Barry Allard
+//
+// MIT license
+//
+// Copyright © 2020 Martin Holst Swende, continued on the work of Barry Allard
+

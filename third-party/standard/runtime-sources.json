@@ -1,0 +1,17 @@
+[
+  {
+    "license": "MPL-2.0",
+    "url": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/MPL-2.0.txt",
+    "error": "The read operation timed out"
+  },
+  {
+    "license": "Classpath-exception-2.0",
+    "url": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/Classpath-exception-2.0.txt",
+    "error": "The read operation timed out"
+  },
+  {
+    "license": "Zlib",
+    "url": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/Zlib.txt",
+    "error": "The read operation timed out"
+  }
+]

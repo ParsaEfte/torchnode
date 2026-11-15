@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.OptionalDouble;
 import java.util.Set;
-import java.util.UUID;
 
 public class DashboardServlet extends HttpServlet {
     private static final int DEFAULT_PAGE_SIZE = 10;
@@ -62,9 +61,18 @@ public class DashboardServlet extends HttpServlet {
             throws ServletException, IOException {
         response.setHeader("Cache-Control", "no-store");
         if ("/assets/dashboard-v2.js".equals(request.getServletPath()) ||
-                "/assets/world-countries.svg".equals(request.getServletPath())) {
+                "/assets/world-countries.svg".equals(request.getServletPath()) || "/assets/observatory.css".equals(request.getServletPath()) || "/assets/node-detail.js".equals(request.getServletPath()) || "/assets/topology.js".equals(request.getServletPath()) || "/assets/topology.css".equals(request.getServletPath())) {
             serveDashboardAsset(request.getServletPath(), response);
             return;
+        }
+        if("/topology".equals(request.getServletPath())) {
+            request.getRequestDispatcher("/WEB-INF/views/topology.jsp").forward(request,response);return;
+        }
+        var pages=java.util.Map.of("/discovery","Discovery Analytics","/p2p","P2P Inspection","/apis","RPC & Beacon Monitoring","/statistics","Network Statistics","/clients","Client Distribution","/geography","Geographic Analytics","/trends","Historical Trends","/events","Changes & Events");
+        if(pages.containsKey(request.getServletPath())) {
+            request.setAttribute("workspaceTitle",pages.get(request.getServletPath()));
+            request.setAttribute("workspacePage",request.getServletPath().substring(1));
+            request.getRequestDispatcher("/WEB-INF/views/workspace.jsp").forward(request,response);return;
         }
         if ("/export.csv".equals(request.getServletPath())) {
             response.setStatus(HttpServletResponse.SC_GONE);
@@ -72,7 +80,7 @@ public class DashboardServlet extends HttpServlet {
             response.getWriter().write("Network-wide endpoint CSV retired. Use /api/v1/help for bounded identity exports.\n");
             return;
         }
-        if ("/analytics".equals(request.getServletPath()) || "/analytics.json".equals(request.getServletPath())) {
+        if ("/analytics".equals(request.getServletPath()) || "/analytics.json".equals(request.getServletPath()) || "/analytics/compare.json".equals(request.getServletPath()) || "/analytics/identities.json".equals(request.getServletPath())) {
             showAnalytics(request,response);
             return;
         }
@@ -93,6 +101,9 @@ public class DashboardServlet extends HttpServlet {
             showInspection(request, response);
             return;
         }
+        if ("/inspection/current.json".equals(request.getServletPath())) {
+            storedInspection(request,response);return;
+        }
         if ("/inspection/status".equals(request.getServletPath())) {
             inspectionStatus(request, response);
             return;
@@ -109,7 +120,7 @@ public class DashboardServlet extends HttpServlet {
             observationHistory(request, response);
             return;
         }
-        if (!"/".equals(request.getServletPath())) {
+        if (!"/".equals(request.getServletPath()) && !"/explorer".equals(request.getServletPath())) {
             response.sendError(HttpServletResponse.SC_NOT_FOUND);
             return;
         }
@@ -175,7 +186,7 @@ public class DashboardServlet extends HttpServlet {
         try (InputStream asset = getClass().getResourceAsStream("/webapp" + path)) {
             if (asset == null) { response.sendError(HttpServletResponse.SC_NOT_FOUND); return; }
             response.setContentType(path.endsWith(".svg") ? "image/svg+xml;charset=UTF-8" :
-                    "text/javascript;charset=UTF-8");
+                    path.endsWith(".css") ? "text/css;charset=UTF-8" : "text/javascript;charset=UTF-8");
             response.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'");
             asset.transferTo(response.getOutputStream());
         }
@@ -193,12 +204,30 @@ public class DashboardServlet extends HttpServlet {
             var scope="all".equals(mode)?NetworkAnalytics.Scope.allAvailable():
                     new NetworkAnalytics.Scope(start,end);
             synchronized(scannerService) {
+                if("/analytics/identities.json".equals(request.getServletPath())) {
+                    String domain=request.getParameter("domain")==null?"all":request.getParameter("domain");
+                    var ids=new NetworkAnalytics(databasePath).observedIdentities(scope,domain,request.getParameter("after"));
+                    response.setContentType("application/json;charset=UTF-8");
+                    objectMapper.writeValue(response.getWriter(),java.util.Map.of("scope",scope,"domain",domain,"identities",ids,"nextCursor",ids.size()==50?ids.get(49):"","methodology","Distinct identities with timestamped evidence in the selected domain; page limit 50, ordered by identity, not recency"));return;
+                }
                 var report=new NetworkAnalytics(databasePath).measure(scope);
-                if("/analytics.json".equals(request.getServletPath())) {
+                if("/analytics/compare.json".equals(request.getServletPath())) {
+                    if(scope.mode()!=NetworkAnalytics.Mode.WINDOW)throw new IllegalArgumentException("Comparison requires bounded windows");
+                    var duration=java.time.Duration.between(start,end);
+                    Instant previousEnd=request.getParameter("baselineEnd")==null?start:Instant.parse(request.getParameter("baselineEnd"));
+                    Instant previousStart=request.getParameter("baselineStart")==null?previousEnd.minus(duration):Instant.parse(request.getParameter("baselineStart"));
+                    var baseline=new NetworkAnalytics(databasePath).measure(new NetworkAnalytics.Scope(previousStart,previousEnd));
+                    response.setContentType("application/json;charset=UTF-8");
+                    objectMapper.writeValue(response.getWriter(),java.util.Map.of("current",report,"baseline",baseline,"methodology","Independent [start,end) UTC measurements. Raw bucket-count deltas are sampling activity changes, not population growth; denominator and unknown changes must be considered."));
+                } else if("/analytics.json".equals(request.getServletPath())) {
                     response.setContentType("application/json;charset=UTF-8");
                     objectMapper.writeValue(response.getWriter(),report);
                 } else {
                     request.setAttribute("analytics",report);
+                    if(request.getServletPath().startsWith("/reports") && "true".equals(request.getParameter("compare"))) {
+                        if(scope.mode()!=NetworkAnalytics.Mode.WINDOW)throw new IllegalArgumentException("Comparison requires bounded windows");
+                        request.setAttribute("baseline",new NetworkAnalytics(databasePath).measure(new NetworkAnalytics.Scope(start.minus(java.time.Duration.between(start,end)),start)));
+                    }
                     if (request.getServletPath().startsWith("/reports"))
                         request.getRequestDispatcher("/WEB-INF/views/report.jsp").forward(request,response);
                     else {
@@ -226,6 +255,9 @@ public class DashboardServlet extends HttpServlet {
 
         try {
             switch (request.getServletPath()) {
+                case "/inspection/start" -> {
+                    try { showInspection(request,response); } catch(ServletException e) { throw new IOException(e); }
+                }
                 case "/scanner/start" -> {
                     scannerService.start();
                     redirect(response, "message", "Scanner started");
@@ -265,11 +297,33 @@ public class DashboardServlet extends HttpServlet {
                     return;
                 }
                 request.setAttribute("node", node);
-                request.setAttribute("inspectionId", inspectionService.inspect(node));
+                String id = "POST".equals(request.getMethod()) ? inspectionService.inspect(node) : "";
+                request.setAttribute("inspectionId", id);
+                if ("POST".equals(request.getMethod()) && String.valueOf(request.getHeader("Accept")).contains("application/json")) {
+                    response.setContentType("application/json;charset=UTF-8");
+                    objectMapper.writeValue(response.getWriter(),java.util.Map.of("id",id));return;
+                }
+                request.setAttribute("csrfToken",csrfToken(request));
                 request.getRequestDispatcher("/WEB-INF/views/inspection.jsp").forward(request, response);
             } catch (java.sql.SQLException e) {
                 throw new ServletException("Unable to load node", e);
             }
+        }
+    }
+
+    private void storedInspection(HttpServletRequest request,HttpServletResponse response) throws IOException {
+        String key=normalize(request.getParameter("key"));
+        if(key==null){response.sendError(400,"Missing node key");return;}
+        synchronized(scannerService) {
+            try(var store=new SqliteNodeStore(databasePath,true)) {
+                var node=store.findByKey(key);
+                if(node.isEmpty()){response.sendError(404,"Node not found");return;}
+                var data=io.github.gavinruff007.torchnode.inspection.InspectionResult.storedSnapshot(node.get(),store);
+                response.setContentType("application/json;charset=UTF-8");
+                objectMapper.writeValue(response.getWriter(),java.util.Map.of("data",data,
+                        "activeInspectionId",inspectionService.activeId(key).orElse(""),"scannerRunning",scannerService.isRunning(),
+                        "canInspect",Boolean.TRUE.equals(request.getAttribute("isAdmin"))));
+            } catch(Exception e){throw new IOException("Unable to read stored node evidence",e);}
         }
     }
 
@@ -343,11 +397,7 @@ public class DashboardServlet extends HttpServlet {
     }
 
     private String csrfToken(HttpServletRequest request) {
-        Object existing = request.getSession().getAttribute("csrfToken");
-        if (existing != null) return existing.toString();
-        String token = UUID.randomUUID().toString();
-        request.getSession().setAttribute("csrfToken", token);
-        return token;
+        return io.github.gavinruff007.torchnode.security.AuthFilter.csrf(request);
     }
 
     private void redirect(HttpServletResponse response, String type, String message) throws IOException {

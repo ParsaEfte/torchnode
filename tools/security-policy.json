@@ -1,0 +1,21 @@
+{
+  "goToolchain": "1.26.11",
+  "govulncheckVersion": "v1.9.0",
+  "goDatabase": {
+    "repository": "https://github.com/golang/vulndb",
+    "revision": "e91d8491530fd8782760dd3916cd2708182b9f10",
+    "archiveSha256": "8ec08955593334aa8f88344e6d6aa37bd328637fddb60be21a031329e36a21bb",
+    "contentSha256": "1e0a8e3a60a07c76ee0514cf721cf9ec355c2f22c26e42bb860c1d2622860d04"
+  },
+  "githubSupplement": {
+    "path": "tools/security-advisories/GHSA-q7gw-24fr-5p69.json",
+    "sha256": "795d9b790753ec102433dba0d5f9e8b6a0ca3003e64ca16de5a8d339016b6df0"
+  },
+  "grypeVersion": "v0.121.3",
+  "grypeArchives": {
+    "grype_0.121.3_darwin_arm64.tar.gz": "54336f2cd8cdee8b3d8ea83462561ff7fa9293498054c7c53a193db44bfea4c8",
+    "grype_0.121.3_linux_amd64.tar.gz": "e9da18cc1429e786722e32161288103600efffd8e483c90761f90485bd1bec85"
+  },
+  "reviewedAt": "2026-11-14T09:00:00+00:00",
+  "maximumAdvisorySnapshotAgeDays": 7
+}

@@ -24,6 +24,7 @@ public class ScanDaemon {
     private final Set<String> inspectedNodes = ConcurrentHashMap.newKeySet();
     private DiscoveryProvider provider;
     private EnrAcquirer enrAcquirer;
+    private io.github.gavinruff007.torchnode.storage.DiscoveryEvidenceWorker evidenceWriter;
     private io.github.gavinruff007.torchnode.enrichment.NetworkEnrichmentService enrichment;
 
     public ScanDaemon(String databasePath) {
@@ -48,6 +49,7 @@ public class ScanDaemon {
                 System.out.println("[ScanDaemon] Starting discovery...");
 
                 provider.start();
+                evidenceWriter=new io.github.gavinruff007.torchnode.storage.DiscoveryEvidenceWorker(databasePath,provider);
 
                 while (running) {
                     provider.discover(observation -> {
@@ -82,6 +84,7 @@ public class ScanDaemon {
             } finally {
                 running = false;
                 provider.close();
+                if(evidenceWriter!=null)evidenceWriter.close();
                 nodeInspector.close();
                 enrichment.close();
                 enrAcquirer.close();

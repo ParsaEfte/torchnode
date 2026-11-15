@@ -90,7 +90,9 @@ func TestHelperSharesSuppliedIdentityAndDiscoversBeyondBootstrap(t *testing.T) {
 		peer.AddKnownNode(n.Node())
 		db.Close()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Authenticated routing-table discovery spans several requests. Allow bounded
+	// scheduling headroom under the race detector and concurrent CI compilation.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	s := &sink{ctx: ctx, events: make(chan event, 256)}
 	done := make(chan error, 1)

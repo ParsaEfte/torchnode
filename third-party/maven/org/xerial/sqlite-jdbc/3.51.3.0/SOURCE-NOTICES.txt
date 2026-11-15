@@ -1,0 +1,602 @@
+/*
+ * Copyright (c) 2007 David Crawshaw <david@zentus.com>
+ *
+ * Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+---
+
+/*
+ * Copyright (c) 2007 David Crawshaw <david@zentus.com>
+ * 
+ * Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+#include "NativeDB.h"
+#include "sqlite3.h"
+
+// Java class variables and method references initialized on library load.
+// These classes are weak references to that if the classloader is no longer referenced (garbage)
+// It can be garbage collected. The weak references are freed on unload.
+// These should not be static variables within methods because assignment in C is not
+// guaranteed to be atomic, meaning that one thread may have half initialized a reference
+// while another thread reads this half reference resulting in a crash.
+
+static jclass dbclass = 0;
+static jfieldID dbpointer = 0;
+static jfieldID db_busyHandler = 0;
+static jfieldID db_commitListener = 0;
+static jfieldID db_updateListener = 0;
+static jfieldID db_progressHandler = 0;
+static jmethodID db_mth_onUpdate = 0;
+static jmethodID db_mth_onCommit = 0;
+static jmethodID mth_stringToUtf8ByteArray = 0;
+static jmethodID mth_throwex = 0;
+static jmethodID mth_throwexcode = 0;
+static jmethodID mth_throwexmsg = 0;
+
+static jclass  fclass = 0;
+static jfieldID func_context = 0,
+                func_value = 0,
+                func_args = 0;
+static jmethodID fmethod = 0;
+
+static jclass  cclass = 0;
+static jmethodID mth_compare = 0;
+
+static jclass  aclass = 0;
+static jmethodID mth_aggr_xstep = 0;
+static jmethodID mth_aggr_xfinal = 0;
+static jmethodID aclone = 0;
+
+static jclass  wclass = 0;
+static jmethodID w_mth_inverse = 0;
+static jmethodID w_mth_xvalue = 0;
+
+static jclass pobserverclass = 0;
+static jmethodID pobserver_mth_progress = 0;
+
+static jclass phandleclass = 0;
+static jmethodID phandle_mth_progress = 0;
+
+static jclass bhandleclass = 0;
+static jmethodID bhandle_mth_callback = 0;
+
+static jclass exclass = 0;
+static jmethodID exp_msg = 0;
+
+static jclass bool_array_class = 0;
+
+static void * toref(jlong value)
+{
+    void * ret;
+    memcpy(&ret, &value, sizeof(void*));
+    return ret;
+}
+
+static jlong fromref(void * value)
+{
+    jlong ret;
+    memcpy(&ret, &value, sizeof(void*));
+    return ret;
+}
+
+static void throwex(JNIEnv *env, jobject this)
+{
+    (*env)->CallVoidMethod(env, this, mth_throwex);
+}
+
+static void throwex_errorcode(JNIEnv *env, jobject this, int errorCode)
+{
+    (*env)->CallVoidMethod(env, this, mth_throwexcode, (jint) errorCode);
+}
+
+static void throwex_msg(JNIEnv *env, const char *str)
+{
+    (*env)->CallStaticVoidMethod(env, dbclass, mth_throwexmsg,
+                                (*env)->NewStringUTF(env, str));
+}
+
+static void throwex_outofmemory(JNIEnv *env)
+{
+    throwex_msg(env, "Out of memory");
+}
+
+static void throwex_stmt_finalized(JNIEnv *env)
+{
+    throwex_msg(env, "The prepared statement has been finalized");
+}
+
+static void throwex_db_closed(JNIEnv *env)
+{
+    throwex_msg(env, "The database has been closed");
+}
+
+static jobject utf8BytesToDirectByteBuffer(JNIEnv *env, const char* bytes, int nbytes)
+{
+    jobject result;
+
+    if (!bytes)
+    {
+        return NULL;
+    }
+
+    result = (*env)->NewDirectByteBuffer(env, (void*) bytes, nbytes);
+    if (!result)
+    {
+        throwex_outofmemory(env);
+        return NULL;
+    }
+
+    return result;
+}
+
+static void utf8JavaByteArrayToUtf8Bytes(JNIEnv *env, jbyteArray utf8bytes, char** bytes, int* nbytes)
+{
+    jsize utf8bytes_length;
+    char* buf;
+
+    *bytes = NULL;
+    if (nbytes) *nbytes = 0;
+
+    if (!utf8bytes)
+    {
+        return;
+    }
+
+    utf8bytes_length = (*env)->GetArrayLength(env, (jarray) utf8bytes);
+
+    buf = (char*) malloc(utf8bytes_length + 1);
+    if (!buf)
+    {
+        throwex_outofmemory(env);
+        return;
+    }
+
+    (*env)->GetByteArrayRegion(env, utf8bytes, 0, utf8bytes_length, (jbyte*)buf);
+
+    buf[utf8bytes_length] = '\0';
+
+    *bytes = buf;
+    if (nbytes) *nbytes = (int) utf8bytes_length;
+}
+
+static jbyteArray stringToUtf8ByteArray(JNIEnv *env, jstring str)
+{
+    jobject result;
+
+    result = (*env)->CallStaticObjectMethod(env, dbclass, mth_stringToUtf8ByteArray, str);
+
+    return (jbyteArray) result;
+}
+
+static void stringToUtf8Bytes(JNIEnv *env, jstring str, char** bytes, int* nbytes)
+{
+    jbyteArray utf8bytes;
+    jsize utf8bytes_length;
+    char* buf;
+
+    *bytes = NULL;
+    if (nbytes) *nbytes = 0;
+
+    if (!str)
+    {
+        return;
+    }
+
+    utf8bytes = stringToUtf8ByteArray(env, str);
+    if (!utf8bytes)
+     {
+        return;
+    }
+
+    utf8bytes_length = (*env)->GetArrayLength(env, (jarray) utf8bytes);
+
+    buf = (char*) malloc(utf8bytes_length + 1);
+    if (!buf)
+    {
+        throwex_outofmemory(env);
+        return;
+    }
+
+    (*env)->GetByteArrayRegion(env, utf8bytes, 0, utf8bytes_length, (jbyte*)buf);
+
+    buf[utf8bytes_length] = '\0';
+
+    *bytes = buf;
+    if (nbytes) *nbytes = (int) utf8bytes_length;
+}
+
+static void freeUtf8Bytes(char* bytes)
+{
+    if (bytes)
+    {
+        free(bytes);
+    }
+}
+
+static sqlite3 * gethandle(JNIEnv *env, jobject nativeDB)
+{
+    return (sqlite3 *)toref((*env)->GetLongField(env, nativeDB, dbpointer));
+}
+
+static void sethandle(JNIEnv *env, jobject nativeDB, sqlite3 * ref)
+{
+    (*env)->SetLongField(env, nativeDB, dbpointer, fromref(ref));
+}
+
+struct BusyHandlerContext {
+    JavaVM * vm;
+    jobject obj;
+};
+
+static void free_busy_handler(JNIEnv *env, void *toFree) {
+    struct BusyHandlerContext* busyHandlerContext = (struct BusyHandlerContext*) toFree;
+    (*env)->DeleteGlobalRef(env, busyHandlerContext->obj);
+    free(toFree);
+}
+
+static void set_new_handler(JNIEnv *env, jobject nativeDB, jfieldID handlerField,
+                             void * newHandler, void (*free_handler)(JNIEnv*, void*))
+{
+    void *toFree = toref((*env)->GetLongField(env, nativeDB, handlerField));
+    if (toFree) {
+        free_handler(env, toFree);
+    }
+
+    (*env)->SetLongField(env, nativeDB, handlerField, fromref(newHandler));
+}
+
+struct CollationData {
+    JavaVM *vm;
+    jobject func;
+};
+
+// User Defined Function SUPPORT ////////////////////////////////////
+
+struct UDFData {
+    JavaVM *vm;
+    jobject func;
+};
+
+/* Returns the sqlite3_value for the given arg of the given function.
+ * If 0 is returned, an exception has been thrown to report the reason. */
+static sqlite3_value * tovalue(JNIEnv *env, jobject function, jint arg)
+{
+    jlong value_pntr = 0;
+    jint numArgs = 0;
+
+    // check we have any business being here
+    if (arg  < 0) { throwex_msg(env, "negative arg out of range"); return 0; }
+    if (!function) { throwex_msg(env, "inconsistent function"); return 0; }
+
+    value_pntr = (*env)->GetLongField(env, function, func_value);
+    numArgs = (*env)->GetIntField(env, function, func_args);
+
+    if (value_pntr == 0) { throwex_msg(env, "no current value"); return 0; }
+    if (arg >= numArgs) { throwex_msg(env, "arg out of range"); return 0; }
+
+    return ((sqlite3_value**)toref(value_pntr))[arg];
+}
+
+/* called if an exception occurred processing xFunc */
+static void xFunc_error(sqlite3_context *context, JNIEnv *env)
+{
+    jstring msg = 0;
+    char *msg_bytes;
+    int msg_nbytes;
+
+    jthrowable ex = (*env)->ExceptionOccurred(env);
+
+    (*env)->ExceptionClear(env);
+
+    msg = (jstring)(*env)->CallObjectMethod(env, ex, exp_msg);
+    if (!msg) { sqlite3_result_error(context, "unknown error", 13); return; }
+
+    stringToUtf8Bytes(env, msg, &msg_bytes, &msg_nbytes);
+    if (!msg_bytes) { sqlite3_result_error_nomem(context); return; }
+
+    sqlite3_result_error(context, msg_bytes, msg_nbytes);
+    freeUtf8Bytes(msg_bytes);
+}
+
+/
+
+---
+
+/*
+ * Copyright (c) 2021 Gauthier Roebroeck <gauthier.roebroeck@gmail.com>
+ *
+ * Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+---
+
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+---
+
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+/**
+ * Provides classes and methods to work with dates and durations. These classes are immutable (and
+ * therefore thread-safe) apart from org.apache.commons.lang3.time.StopWatch.
+ *
+ * <p>The time
+
+---
+
+/**
+ * Copyright 2009 Taro L. Saito
+ *
+ * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
+ * except in compliance with the License. You may obtain a copy of the License at
+ *
+ * <p>http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * <p>Unless required by applicable law or agreed to in writing, software distributed under the
+ * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing permissions and
+ * limitations under the License.
+ * --------------------------------------------------------------------------
+ */
+// --------------------------------------
+// sqlite-jdbc Project
+//
+// SQLiteConfig.java
+// Since: Dec 8, 2009
+//
+// $URL$
+// $Author$
+// --------------------------------------
+
+---
+
+/*--------------------------------------------------------------------------
+ *  Copyright 2007 Taro L. Saito
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *--------------------------------------------------------------------------*/
+// --------------------------------------
+// SQLite JDBC Project
+//
+// SQLite.java
+// Since: 2007/05/10
+//
+// $URL$
+// $Author$
+// --------------------------------------
+
+---
+
+/*--------------------------------------------------------------------------
+ *  Copyright 2008 Taro L. Saito
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *--------------------------------------------------------------------------*/
+// --------------------------------------
+// sqlite-jdbc Project
+//
+// OSInfo.java
+// Since: May 20, 2008
+//
+// $URL$
+// $Author$
+// --------------------------------------
+
+---
+
+/*--------------------------------------------------------------------------
+ *  Copyright 2009 Taro L. Saito
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *--------------------------------------------------------------------------*/
+// --------------------------------------
+// sqlite-jdbc Project
+//
+// ResourceFinder.java
+// Since: Apr 28, 2009
+//
+// $URL$
+// $Author$
+// --------------------------------------
+
+---
+
+/*--------------------------------------------------------------------------
+ *  Copyright 2009 Taro L. Saito
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *--------------------------------------------------------------------------*/
+// --------------------------------------
+// sqlite-jdbc Project
+//
+// SQLiteOpenMode.java
+// Since: Dec 8, 2009
+//
+// $URL$
+// $Author$
+// --------------------------------------
+
+---
+
+/*--------------------------------------------------------------------------
+ *  Copyright 2009 Taro L. Saito
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS"BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *--------------------------------------------------------------------------*/
+// --------------------------------------
+// sqlite-jdbc Project
+//
+// SQLiteErrorCode.java
+// Since: Apr 21, 2009
+//
+// $URL$
+// $Author$
+// --------------------------------------
+
+---
+
+/*--------------------------------------------------------------------------
+ *  Copyright 2010 Taro L. Saito
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *--------------------------------------------------------------------------*/
+// --------------------------------------
+// sqlite-jdbc Project
+//
+// SQLiteDataSource.java
+// Since: Mar 11, 2010
+//
+// $URL$
+// $Author$
+// --------------------------------------
+
+---
+
+/*--------------------------------------------------------------------------
+ *  Copyright 2016 Magnus Reftel
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *--------------------------------------------------------------------------*/
+// --------------------------------------
+// sqlite-jdbc Project
+//
+// SQLiteException.java
+// Since: Jun 28, 2016
+//
+// $URL$
+// $Author$
+// --------------------------------------

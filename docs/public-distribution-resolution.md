@@ -1,0 +1,15 @@
+# Documented owner-directed distribution disposition — v1.0.0
+
+The owner expressly approved evidence-based owner-led review as satisfying the internal qualified-disposition requirement. No external lawyer certificate is required, and no third-party term is waived. Engineering assessment is performed under that delegation; no independent legal opinion or unreported owner test activity is claimed.
+
+Adopt the conservative GPLv3 application/helper distribution scope in DISTRIBUTION-LICENSE.md. Retain project MIT grants and all upstream terms. This avoids relying on Java/Go process separation as conclusive aggregation. ECJ remains separately identified EPL2 build material; no compiler definitions ship at runtime. JNR-POSIX’s documented LGPL2.1 alternative and JFFI per-file choices remain intact. No remaining incompatible runtime license has been identified in the reconciled inventory.
+
+GPLv3 interactive-notice obligations are satisfied conservatively: visible login/menu access to /legal, full copyright/no-warranty/GPL redistribution/copy information, library copyright notices and fixed full-text routes; terminal Main also reports notices. No UI exemption is relied upon. Machine-only helper JSON is unchanged. New routes expose only fixed bundled notices and do not bypass authentication for application data.
+
+Public source transfer conclusion: PASS for the reviewed corrected source once bound to an approved commit. All conveyed project/GPL source and licensing notices are included; source delivery is not an assertion that binary assets are already published. The previous exact-commit push authorization must be rebound if the commit changes.
+
+Binary/container conclusion: compliance engineering PASS for the reviewed corrected artifact set, with mandatory publication-time action: matching preferred sources/notices/relink materials must be publicly downloadable and verified before binary/image distribution. This is fulfillment during delivery, not risk acceptance or permission to publish without materials. SOURCE-DELIVERY.md specifies immediate source/relink routes and ordering.
+
+For the stated pure network download transaction no UserProduct possession/use transfer is represented; conditional installation-information requirements remain applicable if transaction facts change. No license restriction prohibits production/commercial use by recipients: non-production is tested support and owner deployment authorization only. GPL/LGPL modification, relinking and debugging rights remain. Original warranties, notices and EPL source rights are preserved.
+
+Evidence: exact component sources/notices and full JRE/OS/build materials, generated-view source inputs, tested separate-library layout, source/image reproducibility, fixed-route security and accessible notice tests. Final hashes/results are bound in the external release evidence so no circular source-hash claim is made. No actual public URL, remote CI PASS or publication is claimed before execution. Human acceptance is owner-confirmed; missing environment/test details are not invented. Recovery is NOT VERIFIED and production deployment is prohibited.

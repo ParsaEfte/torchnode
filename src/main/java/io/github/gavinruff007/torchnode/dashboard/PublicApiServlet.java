@@ -82,10 +82,17 @@ public final class PublicApiServlet extends HttpServlet {
                     "resources", List.of("/api/v1/identities", "/api/v1/identities/{identity}",
                             "/api/v1/identities/{identity}/evidence/{domain}",
                             "/api/v1/identities/{identity}/runs", "/api/v1/identities/{identity}/changes",
-                            "/api/v1/analytics", "/api/v1/exports/analytics.csv"),
-                    "documentation", "/api/v1/help", "defaultPageSize", DEFAULT_LIMIT,
+                            "/api/v1/analytics", "/api/v1/analytics/compare", "/api/v1/topology/graph", "/api/v1/exports/analytics.csv"),
+                    "authentication", "Server-side session cookie; ADMIN or VIEWER for reads, ADMIN for export routes", "documentation", "/api/v1/help", "defaultPageSize", DEFAULT_LIMIT,
                     "maxPageSize", MAX_LIMIT, "maxExportRows", MAX_EXPORT));
             return;
+        }
+        if ("/analytics/compare".equals(path)) {
+            var current=analytics(request);
+            if(current.scope().mode()!=NetworkAnalytics.Mode.WINDOW)throw new ApiError(400,"invalid_window","Comparison requires bounded windows");
+            var end=current.scope().startInclusive();
+            var start=end.minus(java.time.Duration.between(current.scope().startInclusive(),current.scope().endExclusive()));
+            json(response,Map.of("apiVersion","v1","data",Map.of("current",current,"baseline",measureAnalytics(new NetworkAnalytics.Scope(start,end)),"methodology","Previous equal-duration UTC window; compare evidence counts and denominators, not population growth")));return;
         }
         if ("/help".equals(path)) { help(response); return; }
         if ("/identities".equals(path)) { identities(request,response); return; }
@@ -334,6 +341,9 @@ public final class PublicApiServlet extends HttpServlet {
                 scope=new NetworkAnalytics.Scope(start,end);
             }
         } catch (Exception e) {throw new ApiError(400,"invalid_window","UTC window must be positive and at most 31 days");}
+        return measureAnalytics(scope);
+    }
+    private NetworkAnalytics.Report measureAnalytics(NetworkAnalytics.Scope scope) throws Exception {
         try {return new NetworkAnalytics(databasePath).measure(scope);}
         catch(SQLException e){
             if(e.getMessage()!=null && (e.getMessage().contains("safety limit") || e.getMessage().contains("25,000 inspections")))
@@ -423,8 +433,9 @@ public final class PublicApiServlet extends HttpServlet {
                 "<p>GET <code>/api/v1/identities?limit=20</code>; follow opaque <code>nextCursor</code> with <code>cursor=</code>. Page limit 50. Identity evidence and CSV exports require a full identity. CSV exports reject over 99 rows.</p>"+
                 "<p>GET <code>/api/v1/identities/{identity}/evidence/discovery</code>, <code>enr</code>, <code>enrichment</code>, <code>runs</code>, <code>changes</code>. CSV: <code>/api/v1/identities/{identity}/exports/{domain}.csv</code>.</p>"+
                 "<p>Analytics: <a href=\"/api/v1/analytics\">/api/v1/analytics</a> and <a href=\"/api/v1/exports/analytics.csv\">analytics CSV</a>. UTC time windows are [start,end), at most 31 days; mode=all uses existing safety limits.</p>"+
-                "<p>Unknown values remain null or explicit statuses. Ties are deterministically ordered, not causal. API v1 may gain fields and enum values; breaking changes require a future version. SQLite schema v5 is independent.</p>"+
-                "<p>Responses use UTF-8 and no-store. Errors contain code and message. CORS and rate limiting are absent; deployment remains local/operator controlled.</p></html>");
+                "<p>Unknown values remain null or explicit statuses. Ties are deterministically ordered, not causal. API v1 may gain fields and enum values; breaking changes require a future version. SQLite observation schema v6 is independent of API v1.</p>"+
+                "<p>Authentication: sign in at /login with a CSRF-protected form, then retain the server-side session cookie. ADMIN and VIEWER can read; export routes require ADMIN. All API mutation methods are rejected. GET /api/v1/analytics/compare measures the previous equal-duration window.</p>"+
+                "<p>Responses use UTF-8 and no-store. Login is rate limited; aggregate API traffic needs reverse-proxy controls when exposed. CORS is disabled. Deployment remains operator controlled.</p></html>");
     }
     private static final class ApiError extends RuntimeException {
         final int status;final String code;

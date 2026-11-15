@@ -1,6 +1,13 @@
 name: CI and Docker distribution
 
 on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish only after separate operator release approval'
+        required: true
+        default: false
+        type: boolean
   pull_request:
   push:
     branches: [main]
@@ -14,6 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Require clean source checkout
+        run: python3 tools/check-release-checkout.py
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -21,12 +32,33 @@ jobs:
           cache: maven
       - uses: actions/setup-go@v7
         with:
-          go-version-file: p2p-helper/go.mod
+          go-version: '1.26.11'
           cache-dependency-path: p2p-helper/go.sum
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Enforce backup SQLite runtime policy
+        run: python3 -c "import sqlite3; assert sqlite3.sqlite_version_info >= (3, 51, 3), 'SQLite >= 3.51.3 required; use a compliant Python runtime'; print(sqlite3.sqlite_version)"
       - name: Java tests and package
         run: |
           mvn -B test
           mvn -B -DskipTests package
+      - name: Dashboard JavaScript regression checks
+        run: |
+          node --check src/main/resources/webapp/assets/dashboard-v2.js
+          node tools/check-jsp-javascript.mjs
+          node tools/check-dashboard-v2.mjs
+          node tools/check-admin-layout.mjs
+          node --check src/main/resources/webapp/assets/node-detail.js
+          node tools/check-node-detail.mjs
+          node --check src/main/resources/webapp/assets/topology.js
+          node tools/check-topology.mjs
+          python3 tools/check-provisioning.py
+          python3 tools/check-topology-migration.py
+          python3 tools/check-topology-online-backup.py
       - name: Go tests, vet, race
         working-directory: p2p-helper
         run: |
@@ -34,27 +66,60 @@ jobs:
           go test ./...
           go vet ./...
           go test -race -count=1 ./...
+      - name: Dependency scanner regression checks
+        run: |
+          python3 tools/check-release-dependencies-test.py
+          python3 tools/check-image-promotion.py
+          python3 tools/check-container-http-probes.py
+          python3 tools/check-v6-recovery-rehearsal.py
+          python3 tools/check-device-identity.py
+          python3 tools/check-recovery-provenance.py
+          python3 tools/check-release-checkout-test.py
+      - name: Dependency inventory and Go symbol security gates
+        run: |
+          mvn -B org.apache.maven.plugins:maven-dependency-plugin:3.7.0:list -DincludeScope=runtime -DoutputFile=target/runtime-dependencies.txt
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          python3 tools/check-release-security.py .
       - name: Verify development and release tag policy
         shell: bash
         run: |
           bash scripts/docker-tags.sh refs/heads/main 1234567890abcdef > "$RUNNER_TEMP/main-tags"
           bash scripts/docker-tags.sh refs/tags/v0.0.1 1234567890abcdef > "$RUNNER_TEMP/release-tags"
+          bash scripts/docker-tags.sh refs/tags/v1.0.0 1234567890abcdef > "$RUNNER_TEMP/v1-tags"
           diff -u <(printf '%s\n' parsa202089/torchnode:edge parsa202089/torchnode:sha-1234567890ab) "$RUNNER_TEMP/main-tags"
           diff -u <(printf '%s\n' parsa202089/torchnode:0.0.1 parsa202089/torchnode:0.0 parsa202089/torchnode:0 parsa202089/torchnode:latest) "$RUNNER_TEMP/release-tags"
+          diff -u <(printf '%s\n' parsa202089/torchnode:1.0.0 parsa202089/torchnode:1.0 parsa202089/torchnode:1 parsa202089/torchnode:latest) "$RUNNER_TEMP/v1-tags"
       - name: Docker build
-        run: docker build --platform linux/amd64 -t torchnode:ci .
+        run: python3 tools/build-isolated-image.py . "/tmp/torchnode-image-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --tag torchnode:ci --rebuild
       - name: Container smoke and persistence
-        run: bash scripts/container-smoke.sh torchnode:ci
+        run: bash scripts/container-smoke.sh "$(docker image inspect --format '{{.Id}}' torchnode:ci)"
+      - name: Image vulnerability and SBOM gate
+        run: python3 tools/check-image-security.py "/tmp/torchnode-image-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/image-1.tar" "/tmp/torchnode-image-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}/security"
+      - name: Preserve verified archive for explicit promotion
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verified-image-${{ github.sha }}
+          retention-days: 1
+          compression-level: 0
+          path: |
+            /tmp/torchnode-image-${{ github.run_id }}-${{ github.run_attempt }}/image-1.tar
+            /tmp/torchnode-image-${{ github.run_id }}-${{ github.run_attempt }}/image-build-report.json
+            /tmp/torchnode-image-${{ github.run_id }}-${{ github.run_attempt }}/security/sbom.json
+            /tmp/torchnode-image-${{ github.run_id }}-${{ github.run_attempt }}/security/image-security-summary.json
       - name: Diagnostic logs on failure
         if: failure()
         run: docker ps -a
 
   publish:
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    environment: release
     needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Compute image tags
         id: tags
         shell: bash
@@ -70,7 +135,20 @@ jobs:
         run: |
           git fetch origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-      - uses: docker/setup-buildx-action@v4
+      - name: Require matching release application version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: python3 -c "import os,xml.etree.ElementTree as E; v=E.parse('pom.xml').getroot().find('{http://maven.apache.org/POM/4.0.0}version').text; assert v == os.environ['GITHUB_REF'].removeprefix('refs/tags/v'), 'Tag/application version mismatch'"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: verified-image-${{ github.sha }}
+          path: ${{ runner.temp }}/verified-image
+      - name: Verify and load the tested archive
+        shell: bash
+        run: |
+          image_id=$(python3 tools/verify-image-archive.py "$RUNNER_TEMP/verified-image/image-1.tar" "$RUNNER_TEMP/verified-image/image-build-report.json")
+          docker load --input "$RUNNER_TEMP/verified-image/image-1.tar"
+          test "$(docker image inspect --format '{{.Id}}' torchnode:ci)" = "$image_id"
+          printf '%s\n' "$image_id" > "$RUNNER_TEMP/verified-image/id"
       - uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -83,11 +161,11 @@ jobs:
             echo 'Release version tag already exists; refusing to overwrite.' >&2
             exit 1
           fi
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.tags.outputs.tags }}
-          provenance: true
-          sbom: true
+      - name: Promote the tested image without rebuilding
+        shell: bash
+        run: |
+          image_id=$(cat "$RUNNER_TEMP/verified-image/id")
+          while IFS= read -r tag; do
+            docker tag "$image_id" "$tag"
+            docker push "$tag"
+          done < "$RUNNER_TEMP/docker-tags"

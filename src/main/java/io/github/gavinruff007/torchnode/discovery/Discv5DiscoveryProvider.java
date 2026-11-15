@@ -19,6 +19,9 @@ public final class Discv5DiscoveryProvider implements DiscoveryProvider {
     private final LocalNodeIdentity identity;
     private final Path executable;
     private final List<String> bootstraps;
+    private final ObserverInstance.Run run;
+    private final String evidenceStreamId=UUID.randomUUID().toString();
+    private final Discv5EvidenceCapture relationshipEvidence;
     private final ArrayBlockingQueue<Received> observations = new ArrayBlockingQueue<>(512);
     private final ArrayBlockingQueue<EnrEvidence> evidence = new ArrayBlockingQueue<>(1024);
     private final ArrayDeque<String> diagnostics = new ArrayDeque<>();
@@ -28,11 +31,19 @@ public final class Discv5DiscoveryProvider implements DiscoveryProvider {
     private Process process;
     private Thread reader;
     public Discv5DiscoveryProvider(LocalNodeIdentity identity) throws IOException {
-        this(identity, Path.of(System.getenv().getOrDefault("TORCHNODE_DISCV5_HELPER", "target/torchnode-discovery-helper")), loadBootstraps());
+        this(identity, (ObserverInstance.Run)null);
+    }
+    public Discv5DiscoveryProvider(LocalNodeIdentity identity, ObserverInstance.Run run) throws IOException {
+        this(identity, Path.of(System.getenv().getOrDefault("TORCHNODE_DISCV5_HELPER", "target/torchnode-discovery-helper")), loadBootstraps(),run);
     }
     public Discv5DiscoveryProvider(LocalNodeIdentity identity, Path executable, List<String> bootstraps) {
-        this.identity = identity; this.executable = executable; this.bootstraps = List.copyOf(bootstraps);
+        this(identity,executable,bootstraps,null);
     }
+    public Discv5DiscoveryProvider(LocalNodeIdentity identity, Path executable, List<String> bootstraps, ObserverInstance.Run run) {
+        this.identity = identity; this.executable = executable; this.bootstraps = List.copyOf(bootstraps); this.run=run;
+        relationshipEvidence=new Discv5EvidenceCapture(run,identity.getNodeId());
+    }
+    public Discv5EvidenceCapture.Snapshot relationshipEvidence(){return relationshipEvidence.snapshot();}
     private static List<String> loadBootstraps() throws IOException {
         String override = System.getenv("TORCHNODE_DISCV5_BOOTSTRAPS");
         if (override != null) return Files.readAllLines(Path.of(override)).stream().map(String::trim).filter(s -> !s.isEmpty() && !s.startsWith("#")).toList();
@@ -42,6 +53,7 @@ public final class Discv5DiscoveryProvider implements DiscoveryProvider {
                     .filter(s -> !s.isEmpty() && !s.startsWith("#")).toList();
         }
     }
+    @Override public void evidenceBatches(Consumer<DiscoveryEvidenceBatch> consumer){DiscoveryEvidenceBatch.v5(run,evidenceStreamId,relationshipEvidence.snapshot()).forEach(consumer);}
     @Override public String protocol() { return "discv5"; }
     @Override public synchronized void start() throws Exception {
         if (running) return;
@@ -50,7 +62,11 @@ public final class Discv5DiscoveryProvider implements DiscoveryProvider {
         // Configuration, including the shared identity secret, travels only over stdin, never argv/logs.
         process = new ProcessBuilder(executable.toAbsolutePath().toString()).redirectError(ProcessBuilder.Redirect.INHERIT).start();
         try (var input = process.getOutputStream()) {
-            JSON.writeValue(input, Map.of("privateKey", Numeric.toHexStringNoPrefixZeroPadded(identity.getKeyPair().getPrivateKey(), 64), "bootstraps", bootstraps));
+            Map<String,Object> configuration=new LinkedHashMap<>();
+            configuration.put("privateKey",Numeric.toHexStringNoPrefixZeroPadded(identity.getKeyPair().getPrivateKey(),64));
+            configuration.put("bootstraps",bootstraps);
+            if(run!=null)configuration.put("observer",Map.of("instanceId",run.observerInstanceId().toString(),"runId",run.discoveryRunId().toString(),"keyLifecycle",run.keyLifecycle().name()));
+            JSON.writeValue(input,configuration);
         } catch (Exception e) { process.destroyForcibly(); throw e; }
         running = true; lastEvent = System.nanoTime();
         reader = new Thread(this::read, "discv5-events"); reader.setDaemon(true); reader.start();
@@ -60,17 +76,24 @@ public final class Discv5DiscoveryProvider implements DiscoveryProvider {
             StringBuilder line = new StringBuilder(); boolean oversized = false; int c;
             while ((c = input.read()) != -1) {
                 if (c == '\n') {
-                    if (!oversized && !line.isEmpty()) accept(JSON.readTree(line.toString()));
+                    if (!oversized && !line.isEmpty()) {
+                        try { accept(JSON.readTree(line.toString())); }
+                        catch(com.fasterxml.jackson.core.JsonProcessingException e){diagnose("MALFORMED_HELPER_JSON");}
+                    }
                     else if (oversized) diagnose("OVERSIZED_HELPER_EVENT");
                     line.setLength(0); oversized = false;
-                } else if (line.length() < 8192) line.append((char)c); else oversized = true;
+                } else if (line.length() < 65536) line.append((char)c); else oversized = true;
             }
         } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         catch (Exception e) { diagnose("HELPER_FAILURE: " + e.getClass().getSimpleName()); }
-        finally { if (running) diagnose("HELPER_EXIT"); running = false; if (process != null && process.isAlive()) process.destroy(); }
+        finally { relationshipEvidence.helperUnavailable(); if (running) diagnose("HELPER_EXIT"); running = false; if (process != null && process.isAlive()) process.destroy(); }
     }
     void accept(JsonNode event) throws InterruptedException {
         lastEvent = System.nanoTime();
+        if(event==null || !event.isObject()){diagnose("MALFORMED_HELPER_EVENT");return;}
+        if(event.path("droppedEvents").isIntegralNumber())relationshipEvidence.helperDrops(event.path("droppedEvents").asLong(-1));
+        if(event.path("type").asText().equals("ready"))relationshipEvidence.ready(event.path("version").asInt(),event.path("nodeId").asText());
+        if(event.path("type").asText().equals("discoveryTrace")){relationshipEvidence.accept(event.path("trace"));return;}
         String code = event.path("code").asText();
         if (Set.of("ENDPOINT_ATTEMPT", "ENDPOINT_SUCCESS", "ENDPOINT_FAILURE").contains(code)) {
             String family = event.path("addressFamily").asText();
@@ -100,7 +123,11 @@ public final class Discv5DiscoveryProvider implements DiscoveryProvider {
             observations.put(new Received(new DiscoveryObservation(expected, protocol(), endpoints, decoded.observedAt(), provenance), decoded));
         } catch (IllegalArgumentException e) { diagnose("MALFORMED_HELPER_EVENT"); }
     }
-    private synchronized void diagnose(String text) { if (diagnostics.size() == 64) diagnostics.removeFirst(); diagnostics.addLast(text); }
+    private synchronized void diagnose(String text) {
+        if (diagnostics.size() == 64) {diagnostics.removeFirst();relationshipEvidence.diagnose("PROVIDER_DIAGNOSTIC_EVICTED");}
+        if(text.equals("OVERSIZED_HELPER_EVENT"))relationshipEvidence.diagnose(text);
+        diagnostics.addLast(text.length()>1024?text.substring(0,1024):text);
+    }
     public synchronized List<String> diagnostics() { return List.copyOf(diagnostics); }
     public synchronized Map<String,Long> transportCounts() { return Map.copyOf(transportCounts); }
     @Override public void discover(Consumer<DiscoveryObservation> observer) {
@@ -120,6 +147,7 @@ public final class Discv5DiscoveryProvider implements DiscoveryProvider {
     @Override public void close() {
         Process active; Thread events;
         synchronized (this) { running = false; active = process; events = reader; }
+        relationshipEvidence.helperUnavailable();
         if (active != null) {
             active.destroy();
             try { if (!active.waitFor(3, TimeUnit.SECONDS)) { active.destroyForcibly(); active.waitFor(3, TimeUnit.SECONDS); } }

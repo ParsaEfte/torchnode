@@ -53,7 +53,7 @@ class NetworkAnalyticsTest {
                     attempt(START.plusSeconds(2).toString(),"PASS","PASS","PASS","NOT_TESTED","Geth/v1.0/Linux"),
                     attempt(START.plusSeconds(3).toString(),"FAILED","NOT_TESTED","NOT_TESTED","NOT_TESTED",null)));
             evidence.put("rpc",Map.of("clientVersion","Reth/v2.0/Linux","endpoint","http://192.0.2.1:8545","observedAt",START.plusSeconds(2).toString()));
-            evidence.put("rpcAttempts",List.of(Map.of("endpoint","http://192.0.2.1:8545","attemptedAt",START.plusSeconds(2).toString(),"tcpOpen",true,"rpcReachable",true)));
+            evidence.put("rpcAttempts",List.of(Map.of("endpoint","http://192.0.2.1:8545","attemptedAt",START.plusSeconds(2).toString(),"tcpOpen",true,"rpcReachable",true,"responseMs",24)));
             evidence.put("beaconAttempts",List.of(Map.of("endpoint","http://192.0.2.1:5052","attemptedAt",START.plusSeconds(2).toString(),"tcpOpen",false,"beaconReachable",false)));
             store.saveInspectionRun(node,"run",START.plusSeconds(2).toString(),START.plusSeconds(4).toString(),
                     evidence,null,null,null,List.of(),List.of());
@@ -64,6 +64,16 @@ class NetworkAnalyticsTest {
                     "observed-identities").denominator());
             assertEquals(3,new NetworkAnalytics(path).snapshot().distinctProjectionIdentities());
             assertEquals(4,metric(report,"discovery-occurrences").denominator());
+            assertEquals(List.of(a.nodeId(),b.nodeId()),new NetworkAnalytics(path).observedIdentities(new NetworkAnalytics.Scope(START,END),"discovery",null));
+            assertEquals(List.of(b.nodeId()),new NetworkAnalytics(path).observedIdentities(new NetworkAnalytics.Scope(START,END),"discovery",a.nodeId()));
+            assertEquals(3,bucket(metric(report,"discovery-events-time"),"2026-01-01T00"));
+            assertEquals(1,bucket(metric(report,"discovery-events-time"),"2026-01-01T23"));
+            assertEquals(1,bucket(metric(report,"discovery-identities-time"),"2026-01-01T00"));
+            assertEquals(1,bucket(metric(report,"repeat-discovery"),"repeated receipts"));
+            assertEquals(1,bucket(metric(report,"repeat-discovery"),"one receipt"));
+            assertEquals(2,metric(report,"distinct-endpoints").denominator());
+            assertEquals(1,bucket(metric(report,"family-tcp-outcomes"),"IPV4 / PASS"));
+            assertEquals(1,bucket(metric(report,"tcp-outcomes-time"),"2026-01-01T00 / FAILED"));
             assertEquals(2,metric(report,"inspected-identities").denominator());
             assertEquals(1,metric(report,"inspected-identities").unknown());
             assertEquals(1,bucket(metric(report,"discovery-providers"),"discv4"));
@@ -90,6 +100,9 @@ class NetworkAnalyticsTest {
             assertEquals(1,bucket(metric(report,"hello-capabilities"),"eth/68"));
             assertEquals(0,bucket(metric(report,"p2p-status"),"PASS"));
             assertEquals(1,bucket(metric(report,"rpc-attempts"),"PASS"));
+            assertEquals(1,bucket(metric(report,"rpc-response-latency"),"0–49 ms"));
+            assertEquals(0,metric(report,"rpc-response-latency").unknown());
+            assertEquals(0,metric(report,"beacon-response-latency").denominator());
             assertEquals(1,bucket(metric(report,"beacon-attempts"),"NO_TCP_CONNECTION"));
             assertEquals(0,new NetworkAnalytics(path).measure(new NetworkAnalytics.Scope(END,END.plusSeconds(1)))
                     .metrics().stream().filter(m->m.id().equals("discovery-occurrences")).findFirst().orElseThrow().denominator()-1);
@@ -101,6 +114,24 @@ class NetworkAnalyticsTest {
         }
         assertThrows(IllegalArgumentException.class,()->new NetworkAnalytics.Scope(START,START));
         assertThrows(IllegalArgumentException.class,()->new NetworkAnalytics.Scope(START,START.plusSeconds(32L*86400)));
+    }
+
+    @Test void apiDurationHistogramsExcludeUntimedSamplesAndRetainUnknowns() throws Exception {
+        String path=temp.resolve("durations.db").toString();
+        try(var store=new SqliteNodeStore(path)) {
+            var node=new NodeRecord("192.0.2.1",30303,30303,"ab".repeat(64));store.save(node);
+            var attempts=new java.util.ArrayList<Map<String,Object>>();
+            for(Object duration:new Object[]{0,49,50,199,200,999,1000,-1,"invalid",null}) {
+                var sample=new LinkedHashMap<String,Object>();sample.put("attemptedAt",START.toString());sample.put("rpcReachable",true);sample.put("responseMs",duration);attempts.add(sample);
+            }
+            attempts.add(Map.of("attemptedAt",END.toString(),"rpcReachable",true,"responseMs",1));
+            store.saveInspectionRun(node,"durations",START.toString(),END.toString(),Map.of("rpcAttempts",attempts,
+                    "beaconAttempts",List.of(Map.of("attemptedAt",START.toString(),"beaconReachable",true))),null,null,null,List.of(),List.of());
+            var report=new NetworkAnalytics(path).measure(new NetworkAnalytics.Scope(START,END));
+            var rpc=metric(report,"rpc-response-latency");assertEquals(10,rpc.denominator());assertEquals(3,rpc.unknown());
+            assertEquals(2,bucket(rpc,"0–49 ms"));assertEquals(2,bucket(rpc,"50–199 ms"));assertEquals(2,bucket(rpc,"200–999 ms"));assertEquals(1,bucket(rpc,"1000+ ms"));
+            assertEquals(1,metric(report,"beacon-response-latency").unknown());
+        }
     }
 
     @Test void enrTrustGeoStatusAndRuleVersionStayDistinct() throws Exception {

@@ -52,6 +52,7 @@ public final class CompositeDiscoveryProvider implements DiscoveryProvider {
         EnrEvidence value; while ((value = enrs.peek()) != null) { observer.accept(value); enrs.remove(); }
         if (!running) for (var provider : providers) provider.drainEnrEvidence(observer);
     }
+    @Override public void evidenceBatches(Consumer<DiscoveryEvidenceBatch> consumer) {for(var provider:providers)provider.evidenceBatches(consumer);}
     @Override public void close() {
         running = false; workers.forEach(Thread::interrupt); providers.forEach(DiscoveryProvider::close);
         boolean interrupted = false;

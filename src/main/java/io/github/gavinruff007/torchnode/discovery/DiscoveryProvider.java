@@ -18,5 +18,7 @@ public interface DiscoveryProvider extends AutoCloseable {
     }
     /** Additional ENR evidence, retaining its protocol-specific acquisition provenance. */
     default void drainEnrEvidence(Consumer<io.github.gavinruff007.torchnode.enr.EnrEvidence> observer) {}
+    /** Snapshot-only handoff; called by the dedicated persistence worker, never performs network activity. */
+    default void evidenceBatches(Consumer<DiscoveryEvidenceBatch> consumer) {}
     @Override void close();
 }

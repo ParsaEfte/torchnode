@@ -16,6 +16,11 @@ public class InspectionResult {
 
     private final String id;
     private final NodeRecord node;
+    private final String nodeKey;
+    private String jobState = "RUNNING";
+    private String jobError;
+    private final long deadlineNanos = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(120);
+    public long deadlineNanos() { return deadlineNanos; }
     private final Instant startedAt = Instant.now();
     private final Map<String, Map<String, Object>> diagnostics = new LinkedHashMap<>();
     private final List<Map<String, Object>> timeline = new ArrayList<>();
@@ -31,12 +36,14 @@ public class InspectionResult {
     private List<Map<String,Object>> networkEnrichment = List.of();
     public synchronized void loadNetworkEnrichment(List<Map<String,Object>> values) { networkEnrichment=List.copyOf(values); }
     private boolean complete;
+    private Map<String,Object> storedEndpointAnalysis;
     private EnrEvidence enrEvidence;
     private final List<EnrEvidence> enrHistory = new ArrayList<>();
 
     public InspectionResult(String id, NodeRecord node) {
         this.id = id;
         this.node = node;
+        this.nodeKey = node.getKey();
         diagnostic("Discovery", State.PASS, null, "Observed through " + node.getDiscoverySource(), "Discovery");
         diagnostic("P2P TCP", State.CHECKING, null, null, "Scanner");
         diagnostic("RLPx Auth", State.NOT_TESTED, null,
@@ -58,6 +65,7 @@ public class InspectionResult {
 
     public synchronized void diagnostic(String name, State state, Long durationMs,
                                         String reason, String reasonCode, String source) {
+        if (complete) return;
         Map<String, Object> value = new LinkedHashMap<>();
         value.put("name", name);
         value.put("state", state.name());
@@ -80,8 +88,8 @@ public class InspectionResult {
         timeline.add(event);
     }
 
-    public synchronized void setRpc(Map<String, Object> rpc) { this.rpc = rpc == null ? null : new LinkedHashMap<>(rpc); if(this.rpc!=null)this.rpc.putIfAbsent("observedAt",Instant.now().toString()); }
-    public synchronized void setBeacon(Map<String, Object> beacon) { this.beacon = beacon == null ? null : new LinkedHashMap<>(beacon); if(this.beacon!=null)this.beacon.putIfAbsent("observedAt",Instant.now().toString()); }
+    public synchronized void setRpc(Map<String, Object> rpc) { if(complete)return; this.rpc = rpc == null ? null : new LinkedHashMap<>(rpc); if(this.rpc!=null)this.rpc.putIfAbsent("observedAt",Instant.now().toString()); }
+    public synchronized void setBeacon(Map<String, Object> beacon) { if(complete)return; this.beacon = beacon == null ? null : new LinkedHashMap<>(beacon); if(this.beacon!=null)this.beacon.putIfAbsent("observedAt",Instant.now().toString()); }
     public synchronized void loadEndpointEvidence(Map<String,List<Map<String,Object>>> saved) {
         savedEndpointAttempts.addAll(saved.get("attempts")); savedApiEvidence.addAll(saved.get("apis")); retainedHellos.addAll(saved.get("retainedHellos"));
     }
@@ -97,6 +105,7 @@ public class InspectionResult {
         return values;
     }
     private Map<String,Object> endpointAnalysis() {
+        if(storedEndpointAnalysis != null)return storedEndpointAnalysis;
         var attempts=new ArrayList<>(savedEndpointAttempts);
         if(!endpointAttempts.isEmpty())attempts.removeIf(a->node.getKey().equals(a.get("_nodeKey")));
         attempts.addAll(endpointAttempts);
@@ -107,7 +116,7 @@ public class InspectionResult {
         if(p2p!=null && p2p.get("hello")!=null)hellos.removeIf(h->node.getKey().equals(h.get("_nodeKey")));
         return io.github.gavinruff007.torchnode.analysis.EndpointAnalysis.analyze(node.identity(),node.getObservations(),enrHistory,attempts,apis,hellos).toMap();
     }
-    public synchronized void setP2p(Map<String, Object> p2p) { this.p2p = p2p; }
+    public synchronized void setP2p(Map<String, Object> p2p) { if(complete)return; this.p2p = p2p; }
     public synchronized void setRpcProbeEndpoints(List<String> endpoints) { this.rpcProbeEndpoints = List.copyOf(endpoints); }
     public synchronized void setBeaconProbeEndpoints(List<String> endpoints) { this.beaconProbeEndpoints = List.copyOf(endpoints); }
     public synchronized void loadEnrEvidence(List<EnrEvidence> evidence) { enrHistory.addAll(evidence); }
@@ -144,14 +153,29 @@ public class InspectionResult {
     }
 
     public synchronized void complete() {
+        finish("COMPLETED", null);
+    }
+
+    public synchronized boolean isComplete() { return complete; }
+    public String nodeKey() { return nodeKey; }
+    public synchronized void finish(String state, String error) {
+        if (complete) return;
+        jobState = state; jobError = error;
+        for (var diagnostic : diagnostics.values()) {
+            if ("CHECKING".equals(diagnostic.get("state"))) {
+                diagnostic.put("state", "TIMED_OUT".equals(state) ? "TIMEOUT" : "NOT_TESTED");
+                diagnostic.put("reason", error == null ? "No completed stage observation" : error);
+            }
+        }
         complete = true;
-        event("Inspection completed", (System.currentTimeMillis() - startedAt.toEpochMilli()) + " ms");
+        event("COMPLETED".equals(state) ? "Inspection completed" : "Inspection " + state.toLowerCase(), (System.currentTimeMillis() - startedAt.toEpochMilli()) + " ms");
     }
 
     public synchronized Map<String, Object> snapshot() {
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("id", id);
         root.put("complete", complete);
+        root.put("jobState", jobState);root.put("jobError", jobError);
         root.put("startedAt", startedAt.toString());
         root.put("node", nodeMap());
         root.put("discv5", node.getObservations().stream().filter(o -> o.source().equals("discv5")).map(o -> {
@@ -181,7 +205,51 @@ public class InspectionResult {
         return root;
     }
 
+    /** Read-only view of one latest stored run plus separately labelled current projection/context. */
+    @SuppressWarnings("unchecked")
+    public static Map<String,Object> storedSnapshot(NodeRecord node, io.github.gavinruff007.torchnode.storage.SqliteNodeStore store) {
+        var view = new InspectionResult("stored", node);
+        node.setObservations(store.findObservations(node.identity()));
+        view.loadEnrEvidence(store.findEnrEvidence(node.identity()));
+        view.storedEndpointAnalysis=io.github.gavinruff007.torchnode.analysis.EndpointAnalysis.fromStore(store,node.identity()).toMap();
+        view.loadNetworkEnrichment(store.networkEnrichmentView(node.identity()));
+        for (var diagnostic : view.diagnostics.values()) {
+            if (!"Discovery".equals(diagnostic.get("name"))) {
+                diagnostic.put("state", "NOT_TESTED");
+                diagnostic.put("reason", "No stored stage evidence in the selected run");
+            }
+        }
+        var history = node.identity().available() ? store.inspectionHistory(node.identity(), 1, null) : List.<io.github.gavinruff007.torchnode.storage.SqliteNodeStore.InspectionHistory>of();
+        var latest = history.isEmpty() ? null : history.get(0);
+        if (latest != null) {
+            var evidence = latest.evidence();
+            if(evidence.get("rpcProbeEndpoints") instanceof List<?> endpoints) view.rpcProbeEndpoints=endpoints.stream().filter(String.class::isInstance).map(String.class::cast).toList();
+            if(evidence.get("beaconProbeEndpoints") instanceof List<?> endpoints) view.beaconProbeEndpoints=endpoints.stream().filter(String.class::isInstance).map(String.class::cast).toList();
+            view.rpc = evidence.get("rpc") instanceof Map<?,?> m ? (Map<String,Object>)m : null;
+            view.beacon = evidence.get("beacon") instanceof Map<?,?> m ? (Map<String,Object>)m : null;
+            view.p2p = evidence.get("p2p") instanceof Map<?,?> m ? (Map<String,Object>)m : null;
+            if (evidence.get("endpointAttempts") instanceof List<?> attempts)
+                for (var attempt : attempts) if (attempt instanceof Map<?,?> m) view.endpointAttempts.add((Map<String,Object>)m);
+            if (evidence.get("diagnostics") instanceof List<?> stages) for (var stage : stages) {
+                if (!(stage instanceof Map<?,?> m) || !(m.get("name") instanceof String name)) continue;
+                var value = new LinkedHashMap<>(view.diagnostics.getOrDefault(name, Map.of()));
+                value.putAll((Map<String,Object>)m);
+                if (value.get("state") == null || "CHECKING".equals(value.get("state"))) value.put("state", "NOT_TESTED");
+                view.diagnostics.put(name,value);
+            }
+        }
+        view.complete = true; view.jobState = "NO_ACTIVE_INSPECTION"; view.timeline.clear();
+        var snapshot = view.snapshot();
+        snapshot.put("id", latest == null ? null : latest.id());
+        snapshot.put("startedAt", latest == null ? null : latest.startedAt());
+        snapshot.put("completedAt", latest == null ? null : latest.completedAt());
+        snapshot.put("hasStoredInspection", latest != null);
+        snapshot.put("evidenceMeaning", "Latest stored identity inspection run; node fields are a separate latest projection and endpoint/enrichment context retains its own provenance. No live probe was started.");
+        return snapshot;
+    }
+
     public synchronized void endpointAttempt(io.github.gavinruff007.torchnode.model.NodeEndpoint endpoint) {
+        if (complete) return;
         Map<String,Object> attempt = new LinkedHashMap<>();
         attempt.put("endpoint", endpoint.hostPort()); attempt.put("addressFamily", endpoint.addressFamily().name());
         attempt.put("transport", endpoint.transport().name()); attempt.put("port", endpoint.port());
@@ -195,12 +263,14 @@ public class InspectionResult {
     }
     public synchronized List<Map<String,Object>> endpointAttempts() { return List.copyOf(endpointAttempts); }
     public synchronized void resetP2p() {
+        if(complete)return;
         p2p = null;
         for (String name : List.of("RLPx Auth", "RLPx Hello", "ETH Status"))
             diagnostic(name, State.NOT_TESTED, null, "Prerequisite has not completed for this endpoint", "Scanner");
     }
     @SuppressWarnings("unchecked")
     public synchronized void summarizeEndpointAttempts() {
+        if(complete)return;
         var best = endpointAttempts.stream().max(java.util.Comparator.comparingInt(a -> {
             var stages = (List<Map<String,Object>>)a.get("diagnostics");
             return (int)stages.stream().filter(d -> "PASS".equals(d.get("state"))).count();
@@ -260,8 +330,8 @@ public class InspectionResult {
         value.put("p2pEndpoint", diagnostics.get("P2P TCP").get("endpoint"));
         value.put("addressFamily", diagnostics.get("P2P TCP").get("addressFamily"));
         value.put("rpcEndpoint", rpc == null ? null : rpc.get("endpoint"));
-        value.put("beaconEndpoint", beacon == null ? null
-                : beacon.getOrDefault("endpoint", EndpointAddress.http(node.getIp(), ((Number)beacon.get("port")).intValue())));
+        value.put("beaconEndpoint", beacon == null ? null : beacon.get("endpoint") != null ? beacon.get("endpoint")
+                : beacon.get("port") instanceof Number port ? EndpointAddress.http(node.getIp(), port.intValue()) : null);
         value.put("country", node.getCountry());
         value.put("nodeType", node.getNodeType().name());
         value.put("lastSeen", node.getLastSeen() == null ? null : node.getLastSeen().toString());

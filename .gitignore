@@ -17,8 +17,18 @@ target/
 *.mmdb
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
+*.db.observer.json
+*.db.observer.json.lock
 *.sqlite
 *.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+__pycache__/
+*.pyc
+docs/topology-stage2b-*-20*.md
 
 # Logs
 *.log
@@ -38,3 +48,10 @@ logs/
 p2p-helper/bin/
 p2p-helper/*.exe
 /p2p-helper/p2p-helper
+
+# Private operator evidence and recovery approval bindings; publish only reviewed summaries.
+/docs/validation/
+/docs/v6-*.json
+
+/build-cache/maven/*
+!/build-cache/maven/.keep

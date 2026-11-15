@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -30,53 +31,59 @@ import (
 )
 
 type config struct {
-	PrivateKey      string   `json:"privateKey"`
-	Bootstraps      []string `json:"bootstraps"`
-	DurationSeconds int      `json:"durationSeconds"`
+	PrivateKey      string           `json:"privateKey"`
+	Bootstraps      []string         `json:"bootstraps"`
+	DurationSeconds int              `json:"durationSeconds"`
+	Observer        *observerContext `json:"observer,omitempty"`
 }
 type event struct {
-	Type          string `json:"type"`
-	At            string `json:"at"`
-	NodeID        string `json:"nodeId,omitempty"`
-	RLP           string `json:"rlp,omitempty"`
-	Endpoint      string `json:"endpoint,omitempty"`
-	AddressFamily string `json:"addressFamily,omitempty"`
-	Provenance    string `json:"provenance,omitempty"`
-	Authenticated bool   `json:"authenticated,omitempty"`
-	Code          string `json:"code,omitempty"`
-	Detail        string `json:"detail,omitempty"`
+	Version       int             `json:"version,omitempty"`
+	Trace         *discoveryTrace `json:"trace,omitempty"`
+	DroppedEvents uint64          `json:"droppedEvents"`
+	Type          string          `json:"type"`
+	At            string          `json:"at"`
+	NodeID        string          `json:"nodeId,omitempty"`
+	RLP           string          `json:"rlp,omitempty"`
+	Endpoint      string          `json:"endpoint,omitempty"`
+	AddressFamily string          `json:"addressFamily,omitempty"`
+	Provenance    string          `json:"provenance,omitempty"`
+	Authenticated bool            `json:"authenticated,omitempty"`
+	Code          string          `json:"code,omitempty"`
+	Detail        string          `json:"detail,omitempty"`
 }
 type sink struct {
-	ctx    context.Context
-	events chan event
+	ctx      context.Context
+	events   chan event
+	observer *observerContext
+	dropped  atomic.Uint64
 }
 
 func (s *sink) emit(e event) {
 	e.At = time.Now().UTC().Format(time.RFC3339Nano)
+	e.DroppedEvents = s.dropped.Load()
 	select {
 	case s.events <- e:
 	case <-s.ctx.Done():
 	}
 }
-func (s *sink) diagnostic(code, detail string) {
-	e := event{Type: "diagnostic", At: time.Now().UTC().Format(time.RFC3339Nano), Code: code, Detail: detail}
+func (s *sink) tryEmit(e event) {
+	e.At = time.Now().UTC().Format(time.RFC3339Nano)
+	e.DroppedEvents = s.dropped.Load()
 	select {
 	case s.events <- e:
 	default:
-	} // Transport must not block on verbose diagnostics.
+		s.dropped.Add(1)
+	}
 }
-
+func (s *sink) diagnostic(code, detail string) {
+	s.tryEmit(event{Type: "diagnostic", Code: code, Detail: detail})
+}
 func (s *sink) endpointDiagnostic(code string, endpoint netip.AddrPort, detail string) {
 	family := "IPV4"
 	if endpoint.Addr().Is6() {
 		family = "IPV6"
 	}
-	e := event{Type: "diagnostic", At: time.Now().UTC().Format(time.RFC3339Nano), Code: code,
-		Endpoint: endpoint.String(), AddressFamily: family, Detail: endpoint.String() + " " + detail}
-	select {
-	case s.events <- e:
-	default:
-	}
+	s.tryEmit(event{Type: "diagnostic", Code: code, Endpoint: endpoint.String(), AddressFamily: family, Detail: endpoint.String() + " " + detail})
 }
 
 type handler struct{ sink *sink }
@@ -126,10 +133,11 @@ func (h handler) WithGroup(string) slog.Handler      { return h }
 // This also bounds live upstream challenges (one-second lifetime) under spoofed floods.
 type guardedConn struct {
 	*net.UDPConn
-	mu     sync.Mutex
-	second int64
-	count  int
-	replay map[[32]byte]int64
+	mu           sync.Mutex
+	second       int64
+	count        int
+	replay       map[[32]byte]int64
+	captureStats map[string]uint64
 }
 
 func (c *guardedConn) ReadFromUDPAddrPort(buf []byte) (int, netip.AddrPort, error) {
@@ -141,6 +149,7 @@ func (c *guardedConn) ReadFromUDPAddrPort(buf []byte) (int, netip.AddrPort, erro
 			return 0, addr, err
 		}
 		if n < 63 || n > 1280 || (!addr.Addr().IsValid() || addr.Addr().IsUnspecified() || addr.Addr().IsMulticast()) {
+			c.captureDrop("MALFORMED_DATAGRAM")
 			continue
 		}
 		now := time.Now().Unix()
@@ -158,11 +167,19 @@ func (c *guardedConn) ReadFromUDPAddrPort(buf []byte) (int, netip.AddrPort, erro
 				for k, at := range c.replay {
 					if at < now-60 {
 						delete(c.replay, k)
+						if c.captureStats == nil {
+							c.captureStats = make(map[string]uint64)
+						}
+						c.captureStats["REPLAY_CACHE_EXPIRED"]++
 					}
 				}
 				if len(c.replay) >= 4096 {
 					for k := range c.replay {
 						delete(c.replay, k)
+						if c.captureStats == nil {
+							c.captureStats = make(map[string]uint64)
+						}
+						c.captureStats["REPLAY_CACHE_EVICTED"]++
 						break
 					}
 				}
@@ -171,11 +188,33 @@ func (c *guardedConn) ReadFromUDPAddrPort(buf []byte) (int, netip.AddrPort, erro
 		}
 		c.mu.Unlock()
 		if !allowed || duplicate {
+			if duplicate {
+				c.captureDrop("REPLAY_DROPPED")
+			} else {
+				c.captureDrop("RATE_LIMIT_DROPPED")
+			}
 			continue
 		}
 		copy(buf, packet[:n])
 		return n, addr, nil
 	}
+}
+func (c *guardedConn) captureDrop(code string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.captureStats == nil {
+		c.captureStats = make(map[string]uint64)
+	}
+	c.captureStats[code]++
+}
+func (c *guardedConn) captureCounts() map[string]uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	counts := make(map[string]uint64)
+	for k, v := range c.captureStats {
+		counts[k] = v
+	}
+	return counts
 }
 func (c *guardedConn) WriteToUDPAddrPort(buf []byte, addr netip.AddrPort) (int, error) {
 	if (!addr.Addr().IsValid() || addr.Addr().IsUnspecified() || addr.Addr().IsMulticast()) || len(buf) > 1280 {
@@ -221,6 +260,10 @@ func rawEvent(n *enode.Node, provenance string, authenticated bool) (event, erro
 }
 
 func run(ctx context.Context, cfg config, s *sink) error {
+	if cfg.Observer != nil && (!validObserverID(cfg.Observer.InstanceID) || !validObserverID(cfg.Observer.RunID) || !validKeyLifecycle(cfg.Observer.KeyLifecycle)) {
+		return errors.New("invalid observer context")
+	}
+	s.observer = cfg.Observer
 	if cfg.DurationSeconds < 0 || cfg.DurationSeconds > 3600 {
 		return errors.New("runtime duration out of bounds")
 	}
@@ -242,7 +285,7 @@ func run(ctx context.Context, cfg config, s *sink) error {
 	// static IP removes the ENR address; no UDP/TCP claim is generated for unknown reachability.
 	ln.SetStaticIP(net.IPv4zero)
 	ln.SetStaticIP(net.IPv6zero)
-	s.emit(event{Type: "ready", NodeID: hex.EncodeToString(crypto.FromECDSAPub(&key.PublicKey)[1:]), Detail: ln.Node().String()})
+	s.emit(event{Type: "ready", Version: 2, NodeID: hex.EncodeToString(crypto.FromECDSAPub(&key.PublicKey)[1:]), Detail: ln.Node().String()})
 	for ctx.Err() == nil {
 		conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero})
 		if err != nil {
@@ -371,12 +414,9 @@ func crawl(ctx context.Context, t *discover.UDPv5, client *endpointClient, clien
 			if distance > 1 {
 				distances = append(distances, distance-1)
 			}
-			var nodes []*enode.Node
-			if fallback {
-				nodes, err = selected.findnode(ctx, peer, distances)
-			} else {
-				nodes, err = t.Findnode(peer, distances)
-			}
+			// Public geth Findnode only exposes aggregate results. Use our existing codec
+			// adapter for this same query so authenticated packet evidence remains available.
+			nodes, err := selected.findnode(ctx, peer, distances)
 			if err != nil {
 				s.endpointDiagnostic("FINDNODE_TIMEOUT", endpoint, err.Error())
 			}

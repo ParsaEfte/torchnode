@@ -1,0 +1,14 @@
+# v1.0.0 distribution obligations and delivery
+
+See ../DISTRIBUTION-LICENSE.md for the GPLv3-covered application/helper scope. Project MIT grants and upstream grants/notices are retained; this is not an MIT-only binary distribution or a relicensing of all container files.
+
+- geth-bearing helper and covered combination: preserve GPL3 notices/copyrights and modifications; supply preferred project/helper/vendor sources and build/install materials. Object-code delivery uses GPLv3 section6(d), equivalent source access with clear directions and no further source-access charge.
+- Lanterna LGPL3+: full source, GPL/LGPL texts, prominent notices and Corresponding Application Code are supplied through the thin-JAR/separate-library materials (section4d0). Preserve modification, relinking and reverse-engineering-for-debugging rights. Runtime legal notices include library copyright notices and license links.
+- JNR-POSIX: retain the documented LGPL2.1 alternative and all original declarations. Full library source and application source/object relinking materials implement section6a. Do not invent blanket later-version or Apache grants. JFFI/libffi retain exact per-file alternatives and notices.
+- ECJ: separately identified unmodified EPL2 build/test material, excluded from runtime class definitions. Include full matching ECJ source/license/notices and reasonable source-access information when redistributing it. Do not claim a secondary-license grant. Original Eclipse warranty/liability/source-rights terms remain. No performance guarantee is made on behalf of contributors; section4 commercial obligations remain applicable if triggered.
+- JRE/OS: preserve exact OpenJDK/Temurin GPL2/ClassPath exceptions and third-party legal files, MPL CA source and original APK recipes/patches/upstream sources. Keep MIT/BSD/Apache copyrights, notices and modification attributions. Classpath exceptions do not exempt geth.
+- For this download-only release no UserProduct possession/use transfer or locked installation is part of the stated transaction. GPL6/LGPL installation-information triggers are therefore not part of the current transaction; they are not waived for future hardware/appliance distributions. Generic rebuild/install/relink instructions are supplied nonetheless.
+
+Use SOURCE-DELIVERY.md. Publish matching source, notices and replacement materials before JAR/image binaries, verify equivalent public access and keep source directions alongside the image digest. Do not substitute a broken link or a written-offer promise for the prepared materials. This delivery action remains required at publication.
+
+Non-production/new-storage is a support/testing and original-operator authorization boundary, not a recipient license restriction. Recipients retain applicable use/modification/redistribution rights. Recovery is NOT VERIFIED; production deployment remains prohibited for the operator.

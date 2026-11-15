@@ -28,10 +28,10 @@ class DashboardV2Test {
         try (var ignored = new SqliteNodeStore(db)) { }
         int port;
         try (var socket = new ServerSocket(0)) { port = socket.getLocalPort(); }
-        var server = new DashboardServer(port, db);
+        var server = new DashboardServer(port,db,"127.0.0.1",false);
         server.start();
         try {
-            var client = HttpClient.newHttpClient();
+            var client = AuthTestSupport.client(db,port);
             String base = "http://127.0.0.1:" + port;
             String page = get(client, base + "/").body();
             assertTrue(page.contains("Network measurements"));

@@ -1,3 +1,4 @@
+<%@ page pageEncoding="UTF-8" %>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 <%@ page import="io.github.gavinruff007.torchnode.model.NodeRecord" %>
 <%!
@@ -44,15 +45,20 @@
         @media(max-width:760px){.shell{width:calc(100% - 24px);padding-top:22px}.grid{grid-template-columns:1fr}.wide{grid-column:auto}.top{flex-direction:column}.row{grid-template-columns:105px minmax(0,1fr)}.row .copy{grid-column:2}.diagnostic{grid-template-columns:1fr auto}.diagnostic .reason{grid-column:1/-1}}
         @media(max-width:520px){.summary{grid-template-columns:repeat(2,minmax(0,1fr))}.rows,#identity,#stack,#network-verification,#diagnostics{grid-template-columns:1fr}.row.long{grid-column:auto}.p2p-pipeline{flex-direction:column;align-items:stretch}.p2p-step:not(:last-child):after{content:'↓';margin-left:auto}}
         .evidence-nav{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 18px}.evidence-nav a{color:var(--cyan);padding:6px 9px;border:1px solid var(--line);border-radius:6px;text-decoration:none}.history-note{color:var(--muted);font-size:12px}.history-list{display:grid;gap:9px}.history-list details{min-width:0;padding:10px;border:1px solid var(--line);border-radius:8px;background:#0d131e}.history-list summary{cursor:pointer;overflow-wrap:anywhere}.history-list .rows{margin-top:10px}.history-list time{font-family:ui-monospace,monospace;font-size:12px}.history-list .occurrence{padding:6px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}.copy:hover,.back:hover,.evidence-nav a:hover{border-color:var(--cyan)}a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var(--amber);outline-offset:2px}#inspection-history,#change-history{display:grid;gap:9px}#inspection-history details,#change-history details{padding:10px;border:1px solid var(--line);border-radius:8px;overflow-wrap:anywhere}@media(max-width:520px){.history-list .rows{grid-template-columns:1fr}}
+        #run-inspection{background:#163d43;color:#c7fff4;border:1px solid #42d9d0;cursor:pointer}#run-inspection:disabled{opacity:.45;cursor:wait}#node-load-state{overflow-wrap:anywhere}
     </style>
 </head>
 <body>
+<%@ include file="layout.jsp" %>
 <main class="shell">
+<% if(Boolean.TRUE.equals(request.getAttribute("isAdmin"))){ %><form id="deep-inspection-form" method="post" action="/inspection/start"><input type="hidden" name="csrf" value="<%= h((String)request.getAttribute("csrfToken")) %>"><input type="hidden" name="key" value="<%= h(node.getKey()) %>"><button id="run-inspection" type="submit" class="back" disabled>Run deep inspection</button></form><% } %>
+<p class="history-note">Viewing stored evidence does not initiate network probes. Historical evidence is available below.</p>
     <div class="top">
-        <div><div class="eyebrow">Observed identity · latest projection</div><h1><%= h(node.getIp()) %></h1><div id="connection" class="status checking"><span class="dot"></span>Inspecting from scanner…</div></div>
+        <div><div class="eyebrow">Observed identity · latest projection</div><h1><%= h(node.getIp()) %></h1><div id="connection" class="status checking"><span class="dot"></span>Loading stored evidence…</div></div>
         <a class="back" href="/">← Observatory</a>
     </div>
     <nav class="evidence-nav" aria-label="Evidence sections"><a href="#current-evidence">Current evidence</a><a href="#change-evidence">Derived changes</a><a href="#discovery-evidence">Discovery history</a><a href="#enr-evidence">ENR history</a><a href="#enrichment-evidence">Enrichment history</a><a href="#run-evidence">Inspection runs</a><a href="/reports/network">Network report</a><% if(node.identity().available()) { %><a href="/api/v1/identities/<%=h(node.identity().nodeId())%>/exports/discovery.csv">Discovery CSV</a><% } %></nav>
+    <p id="evidence-source" class="history-note"></p><p id="node-load-state" role="status" aria-live="polite">Loading stored evidence…</p><button class="copy" type="button" id="refresh-node">Refresh stored evidence</button><button class="copy" type="button" id="retry-node" hidden>Retry loading evidence / check job</button><a id="sign-in-again" class="back" href="/login" hidden>Sign in again</a>
     <div id="warning" class="notice" hidden></div>
     <section class="summary">
         <div class="metric"><div class="label">Latest projected node type</div><strong id="summary-type"><%= h(node.getNodeType()) %></strong></div>
@@ -86,13 +92,14 @@
         <section class="card wide"><h2>Connectivity & diagnostics</h2><div id="p2p-pipeline" class="p2p-pipeline"></div><div id="diagnostics"></div></section>
     </div>
 </main>
-<script>
+<script src="/assets/node-detail.js" nonce="<%= request.getAttribute("cspNonce") %>"></script>
+<script nonce="<%= request.getAttribute("cspNonce") %>">
 const inspectionId = '<%= h(inspectionId) %>';
 const el = id => document.getElementById(id);
 const available = value => value !== null && value !== undefined && value !== '';
 const show = value => available(value) ? String(value) : 'Unavailable';
 const yesNo = value => value === true ? 'Yes' : value === false ? 'No' : 'Unavailable';
-const time = value => available(value) ? new Date(value).toLocaleString() : 'Unavailable';
+const time = value => available(value) && Number.isFinite(new Date(value).getTime()) ? new Date(value).toISOString() + ' UTC' : 'Unavailable';
 const expandedRows = new Set();
 let analysisComparisonsOpen = false, analysisEvidenceOpen = false;
 function skeleton(container, count) {
@@ -130,7 +137,7 @@ function row(container, label, value, source, copy = false, shorten = false) {
     item.append(tools); container.append(item); return item;
 }
 
-function diagnosticByName(data, name) { return data.diagnostics.find(item => item.name === name); }
+function diagnosticByName(data, name) { return data.diagnostics.find(item => item.name === name) || {name,state:data.complete?'NOT_TESTED':'CHECKING',reason:'No recorded stage evidence'}; }
 function setBadge(id, confirmed) { el(id).classList.toggle('confirmed', confirmed); }
 function verificationRow(container, check) {
     const item = row(container, check.label, check.value, check.source,
@@ -180,6 +187,7 @@ function renderNetworkEnrichment(entries) {
 }
 
 function render(data) {
+    el('evidence-source').textContent=data.evidenceMeaning || 'Measurements from this explicit deep-inspection job; discovery scanner state is independent.';
     const node = data.node, tcp = diagnosticByName(data, 'P2P TCP');
     const analysisTile = el('endpoint-analysis'); analysisTile.replaceChildren();
     const analysis = data.endpointAnalysis;
@@ -218,11 +226,11 @@ function render(data) {
     const connection = el('connection');
     const partial = tcp.state !== 'PASS' && (!!data.rpc || !!data.beacon);
     connection.className = 'status ' + (tcp.state === 'PASS' || partial ? 'pass' : tcp.state === 'CHECKING' ? 'checking' : 'failed');
-    connection.innerHTML = '<span class="dot"></span>' + (tcp.state === 'PASS' ? 'P2P TCP reachable from scanner' : partial ? 'Partially reachable from scanner' : tcp.state === 'CHECKING' ? 'Inspecting from scanner…' : 'Unreachable from scanner');
-    el('warning').hidden = tcp.state === 'PASS' || tcp.state === 'CHECKING';
+    connection.textContent = tcp.state === 'PASS' ? 'Recorded P2P TCP PASS' : partial ? 'Recorded independent API response' : tcp.state === 'CHECKING' ? 'Deep inspection in progress' : 'No successful P2P TCP observation in this evidence';
+    el('warning').hidden = !['FAILED','TIMEOUT'].includes(tcp.state);
     if (!el('warning').hidden) el('warning').textContent = partial
         ? 'The advertised P2P TCP endpoint was not reachable, but at least one supported API responded successfully.'
-        : 'This node was previously discovered, but the current inspection could not establish a TCP connection. This does not prove the node is offline.';
+        : 'The selected evidence records an unsuccessful TCP attempt. It does not prove the node is currently offline.';
     el('summary-type').textContent = show(node.nodeType);
     el('summary-client').textContent = data.client ? [data.client.name, data.client.version].filter(Boolean).join(' ') : 'Unavailable';
     el('summary-network').textContent = data.networkVerification.warning ? 'Conflicting reports' : show(data.networkVerification.network);
@@ -320,7 +328,7 @@ function render(data) {
         row(p2p, 'Client ID', hello.clientId, 'RLPx Hello', true);
         row(p2p, 'devp2p version', hello.devp2pVersion, 'RLPx Hello');
         row(p2p, 'Advertised listen port', hello.listenPort, 'RLPx Hello');
-        row(p2p, 'Capabilities', (hello.capabilities || []).map(cap => cap.name + '/' + cap.version).join(', '), 'RLPx Hello', true);
+        row(p2p, 'Capabilities', (Array.isArray(hello.capabilities) ? hello.capabilities : []).map(cap => typeof cap === 'string' ? cap : cap.name + '/' + cap.version).join(', '), 'RLPx Hello', true);
         row(p2p, 'Offered ETH versions', (hello.supportedEthVersions || []).join(', '), 'RLPx Hello');
         row(p2p, 'Negotiated ETH version', hello.negotiatedEthVersion || null, 'Derived');
         row(p2p, 'SNAP support', hello.snapSupport ? 'Advertised snap/1' : 'Not advertised', 'RLPx Hello');
@@ -365,12 +373,37 @@ function render(data) {
         state.textContent = check.state.replace('_', ' '); step.append(state); pipeline.append(step);
     });
     data.diagnostics.forEach(d => { const item = document.createElement('div'); item.className = 'diagnostic'; const name = document.createElement('strong'); name.textContent = d.name; const state = document.createElement('span'); state.className = 'state ' + d.state.toLowerCase(); state.textContent = d.state.replace('_',' '); const reason = document.createElement('div'); reason.className = 'reason'; reason.textContent = [d.durationMs !== null ? d.durationMs + ' ms' : null, d.reason, d.source ? '[' + d.source + ']' : null].filter(Boolean).join(' · '); item.append(name,state,reason); diagnostics.append(item); });
-    const timeline = el('timeline'); timeline.replaceChildren(); data.timeline.forEach(event => { const item = document.createElement('div'); item.className = 'event'; const stamp = document.createElement('time'); stamp.textContent = new Date(event.timestamp).toLocaleTimeString(); const label = document.createElement('strong'); label.textContent = event.label; item.append(stamp,label); if (event.detail) { const detail = document.createElement('div'); detail.className = 'muted mono'; detail.textContent = event.detail; item.append(detail); } timeline.append(item); });
+    const timeline = el('timeline'); timeline.replaceChildren(); data.timeline.forEach(event => { const item = document.createElement('div'); item.className = 'event'; const stamp = document.createElement('time'); stamp.textContent = time(event.timestamp); const label = document.createElement('strong'); label.textContent = event.label; item.append(stamp,label); if (event.detail) { const detail = document.createElement('div'); detail.className = 'muted mono'; detail.textContent = event.detail; item.append(detail); } timeline.append(item); });
 }
 
-async function poll() {
-    try { const response = await fetch('/inspection/status?id=' + encodeURIComponent(inspectionId), {cache:'no-store'}); if (response.status === 404) { historyAlive = false; ['historical-timeline','discovery-history','enr-history','enrichment-history','inspection-history','change-history'].forEach(id => el(id).replaceChildren()); location.replace('/'); return; } if (!response.ok) throw new Error('Inspection status unavailable'); const data = await response.json(); render(data); if(data.complete && !historyLoadedAfterComplete){historyLoadedAfterComplete=true;historyCursor=null;changeCursor=null;loadHistory();loadChanges();} setTimeout(poll, data.complete ? 5000 : 750); }
-    catch (error) { el('warning').hidden = false; el('warning').textContent = error.message; setTimeout(poll, 2000); }
+function loadState(kind,message) {
+    el('node-load-state').textContent=message;el('node-load-state').dataset.state=kind;
+    const error=['REQUEST_FAILED','AUTHENTICATION_REQUIRED','POLL_TIMEOUT'].includes(kind);
+    el('retry-node').hidden=!error;el('sign-in-again').hidden=kind!=='AUTHENTICATION_REQUIRED';
+    if(kind!=='LOADING' && kind!=='RUNNING') {
+        for(const element of document.querySelectorAll('.pending-value')) {
+            element.classList.remove('pending-value');
+            if(error)element.textContent=message;
+        }
+        for(const id of Object.keys(initialTiles)) {
+            const container=el(id);
+            if(container.querySelector('.skeleton-tile')) {
+                container.replaceChildren();const note=document.createElement('p');note.className='muted';note.textContent=error?message:'No stored evidence';container.append(note);
+            }
+        }
+        if(error)el('connection').textContent=message;
+    }
+}
+const controller=new NodeDetailController({
+    key:el('inspection-history').dataset.key,initialJobId:inspectionId,render,onState:loadState,
+    onReady:({canInspect,busy,known})=>{const button=el('run-inspection');if(button)button.disabled=!canInspect || busy || !known;},
+    onCompleted:()=>{historyCursor=null;changeCursor=null;loadHistory();loadChanges();}
+});
+async function readNodeJSON(url) { return controller.request(url); }
+function requestError(container,error,retry) {
+    const note=document.createElement('p');note.textContent=error.message;container.append(note);
+    const button=document.createElement('button');button.className='copy';button.type='button';button.textContent='Retry';button.onclick=retry;container.append(button);
+    if(error.kind==='AUTHENTICATION_REQUIRED')loadState(error.kind,error.message);
 }
 let historyCursor = null, historyLoading = false, historyLoadedAfterComplete = false, historyAlive = true;
 const timelinePages = {discovery: [], enr: [], enrichment: [], runs: [], changes: []};
@@ -439,9 +472,8 @@ async function loadHistory() {
     const container = el('inspection-history'), key = container.dataset.key;
     try {
         const url = '/inspection/history?key=' + encodeURIComponent(key) + '&limit=20' + (historyCursor ? '&before=' + encodeURIComponent(historyCursor) : '');
-        const response = await fetch(url, {cache:'no-store'});
-        if (!response.ok) throw new Error('History unavailable');
-        const entries = await response.json();
+        const entries = await readNodeJSON(url);
+        if(!Array.isArray(entries))throw new Error('Malformed inspection history response');
         if (!historyAlive) return;
         if (!historyCursor) container.replaceChildren();
         if (!historyCursor) { timelinePages.runs = entries; renderHistoricalTimeline(); }
@@ -462,7 +494,7 @@ async function loadHistory() {
         if (!entries.length && !historyCursor) row(container, 'History', 'No completed inspections recorded yet', 'Storage');
         if (entries.length) historyCursor = entries[entries.length - 1].id;
         el('history-more').hidden = entries.length < 20;
-    } catch (error) { if (!historyCursor) row(container, 'History', error.message, 'Storage'); }
+    } catch (error) { if(historyAlive)requestError(container,error,loadHistory); }
     finally { historyLoading = false; }
 }
 el('history-more').onclick = loadHistory;
@@ -473,9 +505,8 @@ async function loadChanges() {
     const container = el('change-history'), key = container.dataset.key;
     try {
         const url = '/inspection/changes?key=' + encodeURIComponent(key) + '&limit=20' + (changeCursor ? '&before=' + encodeURIComponent(changeCursor) : '');
-        const response = await fetch(url, {cache:'no-store'});
-        if (!response.ok) throw new Error('Change history unavailable');
-        const entries = await response.json();
+        const entries = await readNodeJSON(url);
+        if(!Array.isArray(entries))throw new Error('Malformed change history response');
         if (!historyAlive) return;
         if (!changeCursor) container.replaceChildren();
         if (!changeCursor) { timelinePages.changes = entries; renderHistoricalTimeline(); }
@@ -494,7 +525,7 @@ async function loadChanges() {
         if (!entries.length && !changeCursor) row(container, 'Changes', 'No defensible comparison recorded yet', 'Derived evidence');
         if (entries.length) changeCursor = entries[entries.length - 1].id;
         el('changes-more').hidden = entries.length < 20;
-    } catch (error) { if (!changeCursor) row(container, 'Changes', error.message, 'Storage'); }
+    } catch (error) { if(historyAlive)requestError(container,error,loadChanges); }
     finally { changesLoading = false; }
 }
 el('changes-more').onclick = loadChanges;
@@ -581,10 +612,8 @@ async function loadObservations(domain) {
         const url = '/inspection/evidence?domain=' + domain + '&key=' +
             encodeURIComponent(container.dataset.key) + '&limit=20' +
             (state.cursor ? '&before=' + state.cursor : '');
-        const response = await fetch(url, {cache: 'no-store'});
-        if (response.status === 404) { location.replace('/'); return; }
-        if (!response.ok) throw new Error('Observation history unavailable');
-        const entries = await response.json();
+        const entries = await readNodeJSON(url);
+        if(!Array.isArray(entries))throw new Error('Malformed observation history response');
         if (!historyAlive) return;
         if (!state.cursor) container.replaceChildren();
         if (!state.cursor) { timelinePages[domain] = entries; renderHistoricalTimeline(); }
@@ -594,7 +623,7 @@ async function loadObservations(domain) {
         if (!entries.length && !state.cursor) evidenceRow(container, 'Historical evidence', 'No ' + domain + ' observations recorded');
         if (entries.length) state.cursor = domain === 'enrichment' ? entries[entries.length - 1].lookupId : entries[entries.length - 1].id;
         el(domain + '-more').hidden = entries.length < 20;
-    } catch (error) { evidenceRow(container, 'History error', error.message); }
+    } catch (error) { if(historyAlive)requestError(container,error,()=>loadObservations(domain)); }
     finally { state.loading = false; }
 }
 el('discovery-more').onclick = () => loadObservations('discovery');
@@ -605,7 +634,12 @@ loadObservations('enr');
 loadObservations('enrichment');
 loadHistory();
 loadChanges();
-poll();
+el('retry-node').onclick=()=>controller.load();
+el('refresh-node').onclick=()=>controller.load();
+const inspectionForm=el('deep-inspection-form');
+if(inspectionForm)inspectionForm.addEventListener('submit',event=>{event.preventDefault();controller.inspect(new URLSearchParams(new FormData(inspectionForm)).toString());});
+window.addEventListener('pagehide',()=>{historyAlive=false;controller.close();});
+controller.load();
 </script>
 </body>
 </html>

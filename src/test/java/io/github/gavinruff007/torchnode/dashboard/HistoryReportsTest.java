@@ -60,11 +60,14 @@ class HistoryReportsTest {
                     "fixture unavailable"));
         }
         int port;
-        try(var socket=new ServerSocket(0)){port=socket.getLocalPort();}
-        var server=new DashboardServer(port,db);
+        // Keep disposable HTTP tests off the operator application and IntelliJ ports.
+        do {
+            try(var socket=new ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1"))){port=socket.getLocalPort();}
+        } while(port==8080 || port==63342);
+        var server=new DashboardServer(port,db,"127.0.0.1",false);
         server.start();
         try {
-            var client=HttpClient.newHttpClient();
+            var client=AuthTestSupport.client(db,port);
             String base="http://127.0.0.1:"+port;
             String key="192.0.2.1:30303:"+identity.nodeId();
             // The latest projection key is supplied by the dashboard link.

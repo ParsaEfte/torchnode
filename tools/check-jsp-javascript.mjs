@@ -3,9 +3,9 @@ import { spawnSync } from 'node:child_process';
 
 // Parse inline JavaScript with representative JSP expression values.
 // Runtime-rendered pages are checked separately by the application smoke test.
-for (const name of ['dashboard', 'inspection']) {
+for (const name of ['dashboard', 'inspection', 'layout']) {
   const file = `src/main/resources/webapp/WEB-INF/views/${name}.jsp`;
-  const html = readFileSync(file, 'utf8');
+  const html = readFileSync(file, 'utf8').replace(/<%=[\s\S]*?%>/g, 'JSP_VALUE');
   let count = 0;
   for (const match of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
     const script = match[1].replace(/<%=[\s\S]*?%>/g, 'JSP_VALUE');
