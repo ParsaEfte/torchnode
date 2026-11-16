@@ -1,4 +1,4 @@
-# TorchNode Observatory v1.0.0 — publication pending approval
+# TorchNode Observatory v1.0.0 — publication record
 
 Java 21 observatory with authenticated ADMIN/VIEWER access, CSRF protection, SQLite schema-v6 evidence and read-only topology APIs. Default builds precompile JSPs and exclude ECJ from the runtime JAR. Matching source, notices and replaceable-library materials accompany the release. The covered application/helper combination uses GPLv3 distribution terms with existing MIT/component grants preserved. Public login/menu legal notices and full license copies are included. Non-production describes supported testing, not recipient license rights.
 
@@ -6,4 +6,4 @@ Java 21 observatory with authenticated ADMIN/VIEWER access, CSRF protection, SQL
 
 Discv4 candidates are not proven topology edges. REPORTED_NEIGHBOR is an authenticated discovery report, not a verified RLPx/ETH connection. Missing evidence means unknown connectivity.
 
-Owner-led compliance review is authorized, human acceptance and the non-production publication exception are owner-confirmed without invented test details. Final exact-tree approval, remote CI and verified source-first delivery remain required before publication. Owner publication authorization remains conditional on mandatory gates and exact revised-artifact approval. Public URLs and tag/commit are recorded only after verified publication.
+Owner-led compliance review and the non-production publication exception were approved. Remote CI on main and v1.0.0 passed. Public source, binary and Docker delivery were verified, including anonymous full-image retrieval matching the approved manifest digest. Release: https://github.com/ParsaEfte/torchnode/releases/tag/v1.0.0 ; image: docker.io/parsa202089/torchnode:1.0.0 . Recovery remains NOT VERIFIED and production deployment remains NO-GO.
