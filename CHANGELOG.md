@@ -1,38 +1,31 @@
 # Changelog
 
-## [1.0.0] — 2026-11-15
-
-v1.0.0: added GPL distribution scope, visible login/menu/terminal legal notices and full license/source/relink directions, preserving component grants. Default Maven/Docker builds now precompile all eight JSP views and exclude runtime ECJ. Release installation is limited to new non-production storage; recovery remains NOT VERIFIED. Public source, binary and Docker distribution completed; recovery remains NOT VERIFIED and production deployment is NO-GO.
-
 ## [Unreleased]
 
-- Add redacted field-level retained-identity diagnostics and strict synthetic device tests; record the unresolved device-only mismatch without changing or rebinding the recovery policy. Both consumed real-data attempts stopped before copying.
-- Validate the full Java 21 suite (241 tests, no exclusions), offline Go tests/race/vet/builds, exact-image integration, canonical fixtures and headed browser/axe checks in isolated environments.
-- Add a clean-checkout CI guard, human accessibility acceptance checklist and unpublished v1.0.0 release materials. Public licensing, recovery acceptance/policy and remote CI remain mandatory gates.
+No changes recorded since v1.0.0.
 
-- Patch all ten flagged Go modules and pin the helper toolchain to Go 1.26.11; add complete offline advisory fallback, strict version matching, freshness and fail-closed CI security gates.
-- Add reproducible image export/comparison, source-only build contexts and immutable-ID smoke invocation. Fix SQLite JNI loading under a read-only root with `noexec` temporary storage; preserve complete failure diagnostics.
-- Extend real Main/JAR, viewer/input/logging and populated synthetic v6 recovery checks. Draft authorizations are rejected before retained-source access, and an approved attempt is consumed before that access.
-- Add native browser contrast measurements, dependency notices/source materials and explicit GPL/LGPL/EPL distribution review. Keep screen-reader, remote CI, retained-data acceptance and v5 policy replacement separate.
+## [1.0.0] — 2026-11-15
 
+First public v1.0.0 release, with GitHub source and binary assets and the pinned Docker Hub `linux/amd64` image. The release is supported for **new, empty non-production storage only**; **Recovery is NOT VERIFIED** and production deployment remains **NO-GO**. See the [release record](docs/release-notes-v1.0.0-DRAFT.md) and [recovery policy](docs/recovery-rollback-policy.md).
 
-- Session authentication, ADMIN/VIEWER authorization, CSRF protection, login
-  throttling, console-only provisioning/reset and security audit records.
-- Responsive administration shell, stored-evidence inspection, bounded historical
-  comparisons and documented counting units/unknowns.
-- Append-only observation schema v6, stable observer/run attribution, bounded
-  background evidence persistence and immutable provenance drill-downs.
-- Directed, independently revalidated discv5 `REPORTED_NEIGHBOR` reports; these
-  do not prove active TCP/RLPx/ETH peer sessions. Legacy identities stay unlinked.
-- Topology filters, bounded neighborhoods/keyset pages, observer-local comparisons,
-  authenticated API reads and ADMIN exports.
-- Fixture-validated, single-use gated online backup and offline migration tooling.
-  Real-source backup, real-backup migration validation and production cutover are
-  still pending separate operator authorizations. This is not a released v1.0.
+### Features
 
-Breaking operational changes: anonymous API access is removed; writable startup
-and credential provisioning can upgrade existing observation schema to v6. Read
-[the release checklist](docs/release-checklist-v1.0.md) before any upgrade.
+- Session authentication with ADMIN/VIEWER permissions, CSRF protection, login throttling, console provisioning/reset and security audit records.
+- Responsive dashboard, Deep Inspection, History, Changes, network analytics and printable reports.
+- Append-only SQLite schema-v6 observations, attributed observers/runs, background evidence persistence and immutable provenance views.
+- Directed discv5 topology from independently revalidated `REPORTED_NEIGHBOR` reports, bounded graph filters/neighborhoods and authenticated read-only APIs. Reported neighbors **do not** prove live TCP/RLPx/ETH sessions.
+- Bounded online-backup and offline migration safety tools for controlled workflows.
+
+### Build, security and distribution
+
+- Patched the flagged Go modules; pinned the Go 1.26.11 helper toolchain and added offline vulnerability and dependency checks.
+- Precompiled all JSP views in Maven/Docker builds; removed runtime ECJ; made JAR and container builds reproducible and verified the exact image with isolated smoke tests.
+- Upgraded SQLite JDBC to 3.54.1.0; improved runtime hardening, security notices and tested replaceable LGPL-library packaging.
+- Published corresponding source, third-party notices, checksums, SBOM, JAR and image archive. The covered application/geth-helper distribution follows GPLv3 while original MIT and component grants remain preserved.
+
+### Upgrade warnings
+
+Anonymous API access is removed. Opening a database for writable startup can apply schema migrations. **Do not attach existing or production storage to v1.0.0**: real-data recovery/rollback and migration compatibility are not approved. See [deployment](docs/deployment.md) and the [release checklist](docs/release-checklist-v1.0.md).
 
 ## [0.0.1] — 2026-10-05
 
@@ -52,6 +45,3 @@ and known limitations.
 
 The SQLite schema is v5. This release adds no new observation domain or
 persistence migration.
-
-
-Unreleased security/license closure (2026-11-14): upgraded SQLite JDBC to3.54.1.0; assembled four-package musl/JRE21 runtime; replaced downloader healthcheck with bounded Java; fixed reproducible rootfs timestamps/cache behavior; ported Python trace fixture to Java; recovered exact upstream license/copyright texts, source archives and replaceable Java layout. No deployment or publication.

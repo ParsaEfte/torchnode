@@ -1,11 +1,26 @@
-# v1.0.0 source/image publication — exact revised artifacts pending approval
+# v1.0.0 publication record
 
-Repository: `ParsaEfte/torchnode`. Tag: `v1.0.0`. Image destination: `parsa202089/torchnode`. Production deployment is outside scope. Recovery is NOT VERIFIED; existing-data use is unsupported. NONPROD-V1-RECOVERY-DEFER-1 is owner-approved for new-storage/non-production publication only; production recovery and rollback requirements remain unchanged.
+**Status: PUBLISHED — 2026-11-15.** This document records the completed non-production public release. It supersedes the earlier pre-publication action plan; do **not** re-run release/tag/upload steps based on an old draft.
 
-1. Complete the owner-authorized documented distribution disposition and source/notices duties; record the owner-confirmed human accessibility acceptance and approved non-production policy exception without inventing missing test details. Create only the approved exact sanitized final commit. Keep private evidence, approvals, credentials and databases out of Git and release assets.
-2. Obtain permission for any public source transfer required to run remote CI. Push only the approved clean source commit after compliance permits; run `gh workflow run ci.yml --repo ParsaEfte/torchnode --ref APPROVED_BRANCH -f publish=false`. Check the actual run head SHA, all required checks and downloaded image/checksums. No remote CI PASS is claimed before execution. Do not invoke publish=true for verification.
-3. Verify the final source archive/notices/replacement materials and exact image export. If CI rebuild differs, investigate and test/rebind the actual intended release; never silently promote a different artifact. Default build uses pinned public compiler/runtime bases; local cache inputs are private build-only material and excluded from Git/runtime layers.
-4. Owner publication authorization is conditional on all applicable gates. Because this compliance correction changes artifacts, obtain the required exact-tree amendment approval and bind the resulting commit and revised hashes to the existing CI/publication authorization. Include repository, tag, image destination and aliases; do not infer approval of additional aliases.
-5. After approval only, create the annotated v1.0.0 tag on that exact commit, publish and anonymously verify matching source/notices/replacement assets first, then add object-code assets and promote the tested Docker image without rebuilding. Verify public URLs, manifest digest, checksums and equivalent source/notices access. Confirm every alias (1.0.0,1.0,1,latest) is approved and refuse overwriting immutable version tags.
+- Source repository: [ParsaEfte/torchnode](https://github.com/ParsaEfte/torchnode).
+- Release and tag: [v1.0.0](https://github.com/ParsaEfte/torchnode/releases/tag/v1.0.0).
+- Pinned release commit: `a1997628d0561259601157c262c6652bf049a4be`.
+- Docker Hub: [parsa202089/torchnode:1.0.0](https://hub.docker.com/r/parsa202089/torchnode/tags), `linux/amd64`, OCI manifest `sha256:491d00e1af431f87226ad7b9ce651b97afe5b6b2b97d40d679ba027fe198f13c`.
+- Matching source and notices, checksums, SBOM, JAR and image archive: available as GitHub release assets.
 
-Release approval does not authorize production deployment. Do not change the live application, collector, database or ports. Do not modify the retained evidence or reuse any consumed authorization.
+## Completed publication checks
+
+1. The approved sanitized commit and immutable tag were published. Remote CI passed on `main` and `v1.0.0` at publication time.
+2. Complete matching corresponding-source and notices assets were uploaded before object code; anonymous downloads and SHA-256 checks succeeded.
+3. GitHub JAR, image archive and other assets were uploaded; anonymous download verification matched their approved checksums.
+4. The approved image was copied to Docker Hub without rebuilding. A fresh unauthenticated pull of all image blobs completed and resolved to the exact approved OCI manifest digest.
+5. The documented owner-directed distribution disposition, required source/relink materials and non-production publication exception were recorded. These do not imply independent legal advice or production approval.
+
+## Operational boundary
+
+> [!WARNING]
+> **Recovery is NOT VERIFIED.** Retained-data recovery, existing-database migration, v5 rollback, crash/WAL restoration and production deployment are **not** accepted. This release is intended for **new, empty non-production storage** only. Operational support limitations do not restrict open-source recipient rights.
+
+The source code, tag, release assets and pinned Docker manifest must remain consistent. Never silently substitute a rebuilt image or overwrite an immutable version tag. A future release or production deployment requires its own validation, approvals and recovery plan.
+
+See [the release checklist](release-checklist-v1.0.md), [deployment guidance](deployment.md), [recovery policy](recovery-rollback-policy.md), [distribution resolution](public-distribution-resolution.md) and [release notes](release-notes-v1.0.0-DRAFT.md).
