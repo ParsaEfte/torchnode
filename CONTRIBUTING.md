@@ -7,3 +7,9 @@ Work only with disposable databases and ephemeral loopback servers. Never use a 
 Run `mvn test`, `mvn -DskipTests package`, Python checks in `tools/check-*.py`, Node DOM checks in `tools/check-*.mjs`, and Go test/vet/race. Build both helpers separately. Container validation requires an already available Docker daemon and disposable volume. See CI for exact commands.
 
 Keep changes focused and add reproducible regressions for behavior fixes. Preserve timestamp/protocol/provenance distinctions and explicit unknowns. REPORTED_NEIGHBOR is a responder's report, not an active peer connection. Describe validation and limitations in PRs. Do not commit databases, sidecars, observer state, secrets, local approval reviews or generated outputs. MIT licensing applies to project contributions; retain third-party notices and review distribution obligations before releasing binaries.
+
+## Opening issues and pull requests
+
+Use the GitHub issue templates for reproducible bugs and feature proposals. Never attach real databases, credentials, observer identity material, or unsanitized network observations. For pull requests, describe the change, test commands and results, and any effects on provenance, auth, schema, recovery or distribution obligations. Documentation-only changes should say which tests are not applicable. Contributions are reviewed before merging; do not assume permission to change production or release artifacts.
+
+For a first contribution, documentation corrections, synthetic-fixture tests and small reproducible bugs are good starting points. Review [the API guide](docs/api.md) and [deployment guide](docs/deployment.md) before changing behavior.
