@@ -2,7 +2,7 @@
 
 # Deployment and controlled upgrade
 
-v1.0.0 is publicly released for new, empty non-production installations. Authentication is required, observation schema is v6, health is static `/healthz`, and a production upgrade is not yet accepted. The old published 0.0.1 image has different security/schema behavior. Do not substitute it for this candidate or use it as an unverified rollback binary on v6.
+v1.0.0 is publicly released for new, empty non-production installations. Authentication is required, observation schema is v6, health is static `/healthz`, and a production upgrade is not yet accepted. The old published 0.0.1 image has different security/schema behavior. Do not substitute it for v1.0.0 or use it as an unverified rollback binary on v6.
 
 ## New, empty installation only
 
@@ -41,19 +41,19 @@ Old-binary-on-v6 compatibility is unverified. Never point an old binary at migra
 
 The v5-specific procedure above remains the original, unfulfilled policy; a marker-6 retained snapshot cannot satisfy it. The operator selected v6-only recovery as the target, subject to [the explicit replacement policy](recovery-rollback-policy.md). No migration, backup, stop/start, restore or deployment is authorized by that target selection. Prepare and separately authorize only the exact disposable retained-data rehearsal package in [the recovery boundary](release-validation.md). A future v6 cutover needs a fresh final v6-compatible checkpoint after an explicitly approved writer shutdown, plus the accepted recovery artifact/configuration/observer tuple.
 
-The candidate image carries the matching SQLite JNI library at `/app/lib/libsqlitejdbc.so`; preserve `JAVA_TOOL_OPTIONS=-Dorg.sqlite.lib.path=/app/lib` when setting other JVM options. Temporary storage can remain `noexec`. Synthetic validation publishes no host port and mounts only owned disposable storage. Never use the production Compose stack for these tests.
+The released v1.0.0 image carries the matching SQLite JNI library at `/app/lib/libsqlitejdbc.so`; preserve `JAVA_TOOL_OPTIONS=-Dorg.sqlite.lib.path=/app/lib` when setting other JVM options. Temporary storage can remain `noexec`. Synthetic validation publishes no host port and mounts only owned disposable storage. Never use the production Compose stack for these tests.
 
 ## Validation and release
 
-CI runs Java/Python/Go/race/vet/DOM checks, enforces Python SQLite policy, builds linux/amd64 and tests a disposable container volume. Local Docker execution remains unverified when its daemon is unavailable. Never start a daemon or alter a production service just to satisfy this check. See [release checklist](release-checklist-v1.0.md), [configuration](configuration.md), [security](../SECURITY.md) and detailed [B6-B safety](release-validation.md).
+CI runs Java/Python/Go/race/vet/DOM checks, enforces Python SQLite policy, builds linux/amd64 and tests a disposable container volume. The published container image passed the recorded isolated CI and runtime checks. Individual operator environments still require their own validation. Never start a daemon or alter a production service just to satisfy this check. See [release checklist](release-checklist-v1.0.md), [configuration](configuration.md), [security](../SECURITY.md) and detailed [B6-B safety](release-validation.md).
 
 Reproducible image engineering uses `tools/build-isolated-image.py` on an explicitly marked temporary source copy or a clean CI checkout. It fixes source timestamps, recompiles Java/Go and compares manifests/configs/archives. No registry push occurs. Container smoke consumes an immutable local ID. CI includes inventory, symbol and actual-image security gates; publication is manual and subject to the release environment. A failed image-security gate is not overridden by passing runtime tests.
 
-The [third-party notices](../THIRD_PARTY_NOTICES.md) and [source distribution review](third-party-licenses.md) accompany the binaries. Source/notice completeness and the exact final release commit/version/checksums still require review before separately authorized publication.
+The [third-party notices](../THIRD_PARTY_NOTICES.md) and [source distribution review](third-party-licenses.md) accompany the binaries. For v1.0.0, matching-source/notice delivery and the exact approved artifacts were publicly verified. Any future release must repeat its own source, license, artifact and authorization checks.
 
 
-Current security/license engineering evidence (2026-11-14): [candidate closure report](release-validation.md). The candidate uses SQLite JDBC3.54.1.0 and a minimal pinned musl/Temurin Java21 runtime with a Java-only healthcheck. No shell, curl, package manager or system crypto/SQLite libraries are shipped. Zero image findings does not approve distribution, retained recovery, v5-policy replacement or deployment. Those gates remain explicit; deployment is NO-GO.
+Engineering evidence (2026-11-14): [security closure report](release-validation.md). The released image uses SQLite JDBC 3.54.1.0 and a minimal pinned musl/Temurin Java21 runtime with a Java-only healthcheck. No shell, curl, package manager or system crypto/SQLite libraries are shipped. Zero image findings do not approve retained recovery, v5-policy replacement or production deployment. Public v1.0.0 distribution was separately authorized and completed. Those gates remain explicit; deployment is NO-GO.
 
 ## Current recovery stop
 
-Both retained-checkpoint attempts are consumed and stopped before copying/container startup. Attempt 2 identified an st_dev difference; [cause and policy tradeoffs](release-validation.md) remain under review. No attempt 3 is justified under the unchanged binding. New installation examples above do not authorize touching an existing installation. Publication preparation is in [the release plan](release-publication-plan.md); publication and deployment remain separate approvals.
+Both retained-checkpoint attempts are consumed and stopped before copying/container startup. Attempt 2 identified an st_dev difference; [cause and policy tradeoffs](release-validation.md) remain under review. No attempt 3 is justified under the unchanged binding. New installation examples above do not authorize touching an existing installation. The completed non-production release is recorded in [the publication record](release-publication-plan.md); production deployment still requires separate approval.
