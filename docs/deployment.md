@@ -2,7 +2,7 @@
 
 # Deployment and controlled upgrade
 
-This is an unreleased v1.0 candidate. Authentication is required, observation schema is v6, health is static `/healthz`, and a production upgrade is not yet accepted. The old published 0.0.1 image has different security/schema behavior. Do not substitute it for this candidate or use it as an unverified rollback binary on v6.
+v1.0.0 is publicly released for new, empty non-production installations. Authentication is required, observation schema is v6, health is static `/healthz`, and a production upgrade is not yet accepted. The old published 0.0.1 image has different security/schema behavior. Do not substitute it for this candidate or use it as an unverified rollback binary on v6.
 
 ## New, empty installation only
 
@@ -19,7 +19,7 @@ docker compose logs -f torchnode
 
 Provisioning needs a TTY and no default credentials exist. Secure cookies remain required for HTTPS exposure. Add external TLS/access control/aggregate rate limiting. Login throttling alone is insufficient. `docker compose down` preserves volume data; `down -v` destroys it and is not a routine upgrade step. No inbound Ethereum port is published. Optional MMDB mounts are in `compose.geoip.yaml`; datasets have separate terms.
 
-The JAR keeps internal `1.0-SNAPSHOT`; no v1.0 image/tag is claimed published. Stable tags are produced only after approved release gates and CI; current distribution supports linux/amd64. Arm64 needs separate runtime validation.
+The released linux/amd64 image is `parsa202089/torchnode:1.0.0`; the internal Maven JAR version may retain `1.0-SNAPSHOT`. The published v1.0.0 image was verified by manifest digest `sha256:491d00e1af431f87226ad7b9ce651b97afe5b6b2b97d40d679ba027fe198f13c`; current distribution supports linux/amd64. Arm64 needs separate runtime validation.
 
 ## Existing installation: distinct approval gates
 

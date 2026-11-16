@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible TorchNode issue using non-sensitive test data.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Please use disposable databases and redact addresses, identities, credentials, tokens, and logs before sharing. Do not upload production or retained checkpoints."
+  - type: input
+    id: version
+    attributes:
+      label: Version and installation
+      description: "Release tag, commit, OS/architecture, and Docker or source build."
+      placeholder: "v1.0.0, linux/amd64, Docker"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: "Use only synthetic/disposable test fixtures."
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: "Optional. No secrets, database files, private observer identities, or raw peer data."

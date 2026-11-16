@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security reporting
+    url: https://github.com/ParsaEfte/torchnode/security
+    about: Do not disclose vulnerabilities or secrets in a public issue. Check private reporting options and SECURITY.md.

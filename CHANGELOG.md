@@ -1,8 +1,10 @@
 # Changelog
 
-v1.0.0: added GPL distribution scope, visible login/menu/terminal legal notices and full license/source/relink directions, preserving component grants. Default Maven/Docker builds now precompile all eight JSP views and exclude runtime ECJ. Release installation is limited to new non-production storage; recovery remains NOT VERIFIED. Publication awaits the recorded mandatory decisions.
+## [1.0.0] — 2026-11-15
 
-## [Unreleased] — v1.0 candidate
+v1.0.0: added GPL distribution scope, visible login/menu/terminal legal notices and full license/source/relink directions, preserving component grants. Default Maven/Docker builds now precompile all eight JSP views and exclude runtime ECJ. Release installation is limited to new non-production storage; recovery remains NOT VERIFIED. Public source, binary and Docker distribution completed; recovery remains NOT VERIFIED and production deployment is NO-GO.
+
+## [Unreleased]
 
 - Add redacted field-level retained-identity diagnostics and strict synthetic device tests; record the unresolved device-only mismatch without changing or rebinding the recovery policy. Both consumed real-data attempts stopped before copying.
 - Validate the full Java 21 suite (241 tests, no exclusions), offline Go tests/race/vet/builds, exact-image integration, canonical fixtures and headed browser/axe checks in isolated environments.
